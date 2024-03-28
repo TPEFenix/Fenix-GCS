@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Net;
 using System.Threading.Tasks;
 using System.Threading;
@@ -8,7 +8,6 @@ using System.Text;
 using FenixGCSApi.Tool;
 using System.Collections.Generic;
 using System.Collections.Concurrent;
-using MessagePack;
 using FenixGCSApi.ByteFormatter;
 
 namespace FenixGCSApi.Client
@@ -137,8 +136,8 @@ namespace FenixGCSApi.Client
             if (!request.IsRequest)
                 throw new Exception("this Package is not request");
             _sendingRequestHooks[id] = new ManualResetEvent(false);
-
-            var serialized = MessagePackSerializer.Serialize(request);
+            
+            var serialized = request.Serialize();
             SendToServer(serialized, type);
 
             if (!_sendingRequestHooks[id].WaitOne(timeout))
@@ -213,7 +212,7 @@ namespace FenixGCSApi.Client
         private void ReceiveData(byte[] recv)
         {
             //處理Response
-            GCSCommandPack data = MessagePackSerializer.Deserialize<GCSCommandPack>(recv);
+            GCSCommandPack data = GCSCommandPack.Deserialize(recv);
 
             if (!string.IsNullOrEmpty(data.ResponseTo))
             {
@@ -235,7 +234,7 @@ namespace FenixGCSApi.Client
         public GCSCommand_Login_Response ServerLogin(string userID, string userPwd, string userName, int timeout = Timeout.Infinite)
         {
             GCSCommand_Login_Request data = new GCSCommand_Login_Request(userID, userPwd, userName);
-            var rtn = MessagePackSerializer.Deserialize<GCSCommandPack>(SendRequestToServer(data, ESendTunnelType.TCP));
+            var rtn = GCSCommandPack.Deserialize(SendRequestToServer(data, ESendTunnelType.TCP));
             
             return (GCSCommand_Login_Response)rtn;
         }

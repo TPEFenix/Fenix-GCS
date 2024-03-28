@@ -5,7 +5,7 @@ using System.Threading;
 using System.Net.Sockets;
 using System.Collections.Generic;
 using System.Text;
-using MessagePack;
+
 
 namespace FenixGCSApi.Server
 {
@@ -66,7 +66,7 @@ namespace FenixGCSApi.Server
 
         private void Entity_OnClientReceive(ClientEntity entity, byte[] data)
         {
-            GCSCommandPack pack = MessagePackSerializer.Deserialize<GCSCommandPack>(data);
+            GCSCommandPack pack = GCSCommandPack.Deserialize(data);
             #region 登入請求
             if (pack .EMsgType == EMsgType.Login&& entity.Logged == false && _connectingClient.Contains(entity))
             {
@@ -79,7 +79,7 @@ namespace FenixGCSApi.Server
 
                 bool success = LoginProcess.Invoke(recvData.UserID, recvData.UserPwd);
                 GCSCommandPack loginRtn = new GCSCommand_Login_Response(UDP_Port, success, recvData.ID);
-                var rtn = MessagePackSerializer.Serialize(loginRtn);
+                var rtn = loginRtn.Serialize();
                 entity.Send(rtn);
                 entity.USER_ID = recvData.UserID;
                 entity.USER_NAME = recvData.UserName;

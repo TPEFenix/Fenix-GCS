@@ -1,8 +1,8 @@
-﻿using MessagePack;
+﻿using MemoryPack;
 
 namespace FenixGCSApi
 {
-    [MessagePackObject(true)]
+    [MemoryPackable]
     public partial class GCSCommand_Login_Request : GCSCommandPack
     {
         public string UserID { get; set; }
@@ -15,7 +15,7 @@ namespace FenixGCSApi
             this.UserName = UserName;
         }
     }
-    [MessagePackObject(true)]
+    [MemoryPackable]
     public partial class GCSCommand_Login_Response : GCSCommandPack
     {
         public bool Success { get; set; }
