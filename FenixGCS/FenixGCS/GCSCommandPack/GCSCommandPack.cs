@@ -4,6 +4,7 @@ using MemoryPack;
 
 namespace FenixGCSApi
 {
+    [MemoryPackUnion((int)EMsgType.LoginHint, typeof(GCSCommand_LoginHint))]
     [MemoryPackUnion((int)EMsgType.Login, typeof(GCSCommand_Login_Request))]
     [MemoryPackUnion((int)EMsgType.LoginRtn, typeof(GCSCommand_Login_Response))]
     [MemoryPackable]

@@ -31,4 +31,12 @@ namespace FenixGCSApi
             ServerUDP_Port = serverudp_Port;
         }
     }
+
+    [MemoryPackable]
+    public partial class GCSCommand_LoginHint : GCSCommandPack
+    {
+        public GCSCommand_LoginHint() : base(EMsgType.LoginHint)
+        {
+        }
+    }
 }

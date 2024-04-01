@@ -57,7 +57,7 @@ namespace FenixGCSApi.Server
                         _connectingClient.Add(entity);
                     entity.OnClientReceive += Entity_OnClientReceive;
                     entity.StartListen();
-                    entity.SendToTarget(Constants.PleaseLogin, Client.ESendTunnelType.TCP);
+                    entity.SendPackDataToTarget( new GCSCommand_LoginHint(), Client.ESendTunnelType.TCP);
                     TCPClientConnected?.Invoke(client);
                 }
                 catch (Exception ex)
@@ -87,7 +87,7 @@ namespace FenixGCSApi.Server
                 bool success = LoginProcess.Invoke(recvData.UserID, recvData.UserPwd);
                 GCSCommandPack loginRtn = new GCSCommand_Login_Response(UDP_Port, success, recvData.ID);
                 var rtn = loginRtn.Serialize();
-                entity.SendToTarget(rtn, Client.ESendTunnelType.TCP);
+                entity.SendBinaryToTarget(rtn, Client.ESendTunnelType.TCP);
                 entity.USER_ID = recvData.UserID;
                 entity.USER_NAME = recvData.UserName;
                 lock (_loginLocker)

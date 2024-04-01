@@ -265,11 +265,6 @@ namespace FenixGCSApi.Client
 
         private void ReceiveData(byte[] recv)
         {
-            if (IsPleaseLoginRecv(recv))
-            {
-                _pleaseLogin.Set();
-                return;
-            }
             //處理Response
             GCSCommandPack data = GCSCommandPack.Deserialize(recv);
 
@@ -280,16 +275,15 @@ namespace FenixGCSApi.Client
                     _responseCollection.TryAdd(data.ResponseTo, recv);
                     manualResetEvent.Set();
                 }
-                else
-                {
-                    //沒有這個請求，不理會
-                }
+                return;
             }
             else//基本指令
             {
-
+                if (data.EMsgType == EMsgType.LoginHint)
+                {
+                    _pleaseLogin.Set();
+                }
             }
-
         }
 
         #region 溝通

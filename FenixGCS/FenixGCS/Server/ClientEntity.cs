@@ -1,6 +1,7 @@
 ﻿using FenixGCSApi.ByteFormatter;
 using FenixGCSApi.Client;
 using FenixGCSApi.Tool;
+using MemoryPack;
 using System;
 using System.Collections.Generic;
 using System.Net;
@@ -67,12 +68,21 @@ namespace FenixGCSApi.Server
         /// <summary>
         /// 直接傳送資料給Server(建議還是使用特定的指令函式)
         /// </summary>
-        public void SendToTarget(byte[] data, ESendTunnelType type)
+        public void SendBinaryToTarget(byte[] data, ESendTunnelType type)
         {
             if (type == ESendTunnelType.TCP)
                 _tcpSendJobQueue.Enqueue(data);
             else if (type == ESendTunnelType.UDP)
                 _udpSendJobQueue.Enqueue(data);
+        }
+
+        /// <summary>
+        /// 直接傳送資料給Server(送出Pack)
+        /// </summary>
+        public void SendPackDataToTarget(GCSCommandPack pack, ESendTunnelType type)
+        {
+            byte[] binary = MemoryPackSerializer.Serialize(pack);
+            SendBinaryToTarget(binary, type);
         }
 
         private void StartListenFromTCPThread()
