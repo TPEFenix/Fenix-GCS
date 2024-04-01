@@ -8,8 +8,4 @@
     <PackageReference Include="MemoryPack" Version="1.20.5" />
   </ItemGroup>
 
-  <ItemGroup>
-    <Folder Include="SerializeEngine\" />
-  </ItemGroup>
-
 </Project>

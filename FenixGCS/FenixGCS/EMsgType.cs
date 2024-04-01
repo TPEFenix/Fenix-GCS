@@ -12,6 +12,8 @@ namespace FenixGCSApi
         Free,
         LoginRtn,
         TalkMsgTo,
-        MsgRecv
+        MsgRecv,
+        FunctionCall,
+
     }
 }
