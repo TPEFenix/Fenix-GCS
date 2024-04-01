@@ -9,6 +9,7 @@ using FenixGCSApi.Tool;
 using System.Collections.Generic;
 using System.Collections.Concurrent;
 using FenixGCSApi.ByteFormatter;
+using FenixGCSApi.ConstantsLib;
 
 namespace FenixGCSApi.Client
 {
@@ -44,7 +45,7 @@ namespace FenixGCSApi.Client
 
     public class FenixGCS_Client : ILogable
     {
-        public Encoding Encoding = Encoding.UTF8;
+
 
         /// <summary>
         /// Log紀錄事件
@@ -53,60 +54,99 @@ namespace FenixGCSApi.Client
 
         public EClientState EClientState { get; set; }
 
-        private KeepJobQueue<byte[]> _tcpSendJobQueue;
-        private KeepJobQueue<byte[]> _udpSendJobQueue;
-        private KeepJobQueue<byte[]> _receiveJobQueue;
-
         private ConcurrentDictionary<string, ManualResetEvent> _sendingRequestHooks = new ConcurrentDictionary<string, ManualResetEvent>();
         private ConcurrentDictionary<string, byte[]> _responseCollection = new ConcurrentDictionary<string, byte[]>();
 
         private TcpClient _tcpClient;
-        private FGCSByteFormatter _tcpByteFormatter = new FGCSByteFormatter();
-        private CancellationTokenSource _tcpListenCancelTokenSource;
-        private CancellationTokenSource _tcpFormatterCancelTokenSource;
-
         private UdpClient _udpClient;
-        private IPEndPoint _udpEndPoint;
+
+        private FGCSByteFormatter _tcpByteFormatter = new FGCSByteFormatter();
         private FGCSByteFormatter _udpByteFormatter = new FGCSByteFormatter();
+
+        private CancellationTokenSource _tcpListenCancelTokenSource;
         private CancellationTokenSource _udpListenCancelTokenSource;
+
+        private CancellationTokenSource _tcpFormatterCancelTokenSource;
         private CancellationTokenSource _udpFormatterCancelTokenSource;
 
-        public CancellationTokenSource ListenerCancellationToken;
+        private IPEndPoint _serverUDPEndPoint;
+        private IPEndPoint localUDPEndPoint => (IPEndPoint)_udpClient.Client.LocalEndPoint;
+
+        private KeepJobQueue<byte[]> _tcpSendJobQueue;
+        private KeepJobQueue<byte[]> _udpSendJobQueue;
+        private KeepJobQueue<byte[]> _receiveJobQueue;
+
+        private ManualResetEvent _pleaseLogin = new ManualResetEvent(false);
+
+        public bool IsPleaseLoginRecv(byte[] recv)
+        {
+            bool success = true;
+            if (recv.Length == 3)
+            {
+                for (int i = 0; i < recv.Length; i++)
+                {
+                    if (Constants.PleaseLogin[i] != recv[i])
+                    {
+                        success = false;
+                        continue;
+                    }
+                }
+            }
+            else
+            {
+                success = false;
+            }
+            return success;
+        }
+
         public FenixGCS_Client()
         {
             EClientState = EClientState.Init;
             _receiveJobQueue = new KeepJobQueue<byte[]>(ReceiveData);
         }
 
-
         public bool ConnectToServer(IPEndPoint serverListenIP, string userID, string userPwd, string userName)
         {
+            _pleaseLogin = new ManualResetEvent(false);
             EClientState = EClientState.Connecting;
 
             _tcpClient = new TcpClient(IPAddress.Any.AddressFamily);
             _tcpClient.Connect(serverListenIP);
-            StartListenFromTCPThread();
+
             StartRecvFromTCPFormatter();
+            StartListenFromTCPThread();
+            _udpClient = new UdpClient(new IPEndPoint(IPAddress.Any, 0));
             _tcpSendJobQueue = new KeepJobQueue<byte[]>(SendByTCP);
 
+            if (!_pleaseLogin.WaitOne(5000))//等待伺服器說明可以登入
+                return false;
+            _pleaseLogin.Reset();
+
             var rtnData = ServerLogin(userID, userPwd, userName, 5000);
-
-            if (rtnData.EMsgType == EMsgType.LoginRtn)
+            if (rtnData.Success)
             {
-                if (rtnData.Success)
+                if (rtnData.Result.EMsgType == EMsgType.LoginRtn)
                 {
-                    EClientState = EClientState.Connected;
-
-                    _udpClient = new UdpClient(IPAddress.Any.AddressFamily);
-                    _tcpSendJobQueue = new KeepJobQueue<byte[]>(SendByTCP);
-
-                    return true;
+                    if (rtnData.Result.Success)
+                    {
+                        EClientState = EClientState.Connected;
+                        _serverUDPEndPoint = new IPEndPoint(serverListenIP.Address, rtnData.Result.ServerUDP_Port);
+                        _tcpSendJobQueue = new KeepJobQueue<byte[]>(SendByTCP);
+                        _udpSendJobQueue = new KeepJobQueue<byte[]>(SendByUDP);
+                        StartRecvFromUDPFormatter();
+                        StartListenFromUDPThread();
+                        return true;
+                    }
+                    else
+                    {
+                        EClientState = EClientState.ConnectFailed;
+                        this.ErrorLog("登入失敗");
+                    }
                 }
-                else
-                {
-                    EClientState = EClientState.ConnectFailed;
-                    return false;
-                }
+            }
+            else
+            {
+                this.ErrorLog(rtnData.Message);
             }
 
             //後續應加強使用時間標記的交替加密方式
@@ -136,12 +176,12 @@ namespace FenixGCSApi.Client
             if (!request.IsRequest)
                 throw new Exception("this Package is not request");
             _sendingRequestHooks[id] = new ManualResetEvent(false);
-            
+
             var serialized = request.Serialize();
             SendToServer(serialized, type);
 
             if (!_sendingRequestHooks[id].WaitOne(timeout))
-                throw new Exception("Timeout");
+                throw new TimeoutException("Timeout");
 
             _sendingRequestHooks.TryRemove(id, out ManualResetEvent manualResetEvent);
             if (!_responseCollection.TryRemove(id, out byte[] rtn))
@@ -156,7 +196,7 @@ namespace FenixGCSApi.Client
         private void SendByUDP(byte[] data)
         {
             var sendData = FGCSByteFormatter.GenerateSendArray(data);
-            _udpClient.Send(data, sendData.Length,_udpEndPoint);
+            _udpClient.Send(sendData, sendData.Length, _serverUDPEndPoint);
         }
 
         private void StartListenFromTCPThread()
@@ -187,7 +227,7 @@ namespace FenixGCSApi.Client
                 {
                     IPEndPoint recvIP = null;
                     byte[] data = _udpClient.Receive(ref recvIP);
-                    if (!recvIP.Equals(_udpEndPoint))
+                    if (!recvIP.Equals(_serverUDPEndPoint))
                         continue;
                     _udpByteFormatter.InsertSourceData(data);
                 }
@@ -207,10 +247,29 @@ namespace FenixGCSApi.Client
                 }
             });
         }
+        private void StartRecvFromUDPFormatter()
+        {
+            if (_udpFormatterCancelTokenSource != null)
+                _udpFormatterCancelTokenSource.Cancel();
+            _udpFormatterCancelTokenSource = new CancellationTokenSource();
+            Task.Run(() =>
+            {
+                while (!_udpFormatterCancelTokenSource.IsCancellationRequested)
+                {
+                    byte[] data = _udpByteFormatter.Receive();
+                    _receiveJobQueue.Enqueue(data);
+                }
+            });
+        }
 
 
         private void ReceiveData(byte[] recv)
         {
+            if (IsPleaseLoginRecv(recv))
+            {
+                _pleaseLogin.Set();
+                return;
+            }
             //處理Response
             GCSCommandPack data = GCSCommandPack.Deserialize(recv);
 
@@ -223,23 +282,36 @@ namespace FenixGCSApi.Client
                 }
                 else
                 {
-                    
+                    //沒有這個請求，不理會
                 }
+            }
+            else//基本指令
+            {
+
             }
 
         }
 
-        #region KVTF溝通
-
-        public GCSCommand_Login_Response ServerLogin(string userID, string userPwd, string userName, int timeout = Timeout.Infinite)
+        #region 溝通
+        public ActionResult<GCSCommand_Login_Response> ServerLogin(string userID, string userPwd, string userName, int timeout = Timeout.Infinite)
         {
-            GCSCommand_Login_Request data = new GCSCommand_Login_Request(userID, userPwd, userName);
-            var rtn = GCSCommandPack.Deserialize(SendRequestToServer(data, ESendTunnelType.TCP));
-            
-            return (GCSCommand_Login_Response)rtn;
+            GCSCommand_Login_Request data = new GCSCommand_Login_Request(userID, userPwd, userName, localUDPEndPoint.Port);
+            try
+            {
+                var rtnByte = SendRequestToServer(data, ESendTunnelType.TCP, timeout);
+                var obj = GCSCommandPack.Deserialize<GCSCommand_Login_Response>(rtnByte);
+                ActionResult<GCSCommand_Login_Response> rtn = new ActionResult<GCSCommand_Login_Response>(true, obj);
+                return rtn;
+            }
+            catch (TimeoutException)
+            {
+                return new ActionResult<GCSCommand_Login_Response>(false, null, "Timeout");
+            }
+            catch (Exception e)
+            {
+                return new ActionResult<GCSCommand_Login_Response>(false, null, e.Message);
+            }
         }
-
-
         #endregion
     }
 }

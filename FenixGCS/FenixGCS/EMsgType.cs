@@ -13,7 +13,6 @@ namespace FenixGCSApi
         LoginRtn,
         TalkMsgTo,
         MsgRecv,
-        FunctionCall,
-
+        FunctionCall
     }
 }

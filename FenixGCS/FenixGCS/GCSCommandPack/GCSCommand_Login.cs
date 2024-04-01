@@ -1,4 +1,6 @@
-﻿using MemoryPack;
+﻿using FenixGCSApi.Client;
+using MemoryPack;
+using System.Net;
 
 namespace FenixGCSApi
 {
@@ -8,22 +10,25 @@ namespace FenixGCSApi
         public string UserID { get; set; }
         public string UserPwd { get; set; }
         public string UserName { get; set; }
-        public GCSCommand_Login_Request(string userID, string userPwd, string UserName) : base(EMsgType.Login, true)
+        public int Client_UDP_Port { get; set; }
+
+        public GCSCommand_Login_Request(string userID, string userPwd, string userName, int client_UDP_Port, ESendTunnelType tunnelType = ESendTunnelType.TCP) : base(EMsgType.Login, true, null, tunnelType)
         {
             UserID = userID;
             UserPwd = userPwd;
-            this.UserName = UserName;
+            UserName = userName;
+            Client_UDP_Port = client_UDP_Port;
         }
     }
     [MemoryPackable]
     public partial class GCSCommand_Login_Response : GCSCommandPack
     {
         public bool Success { get; set; }
-        public int UDP_Port { get; set; }
-        public GCSCommand_Login_Response(int udp_Port, bool success, string responseTo) : base(EMsgType.LoginRtn, false, responseTo)
+        public int ServerUDP_Port { get; set; }
+        public GCSCommand_Login_Response(int serverudp_Port, bool success, string responseTo, ESendTunnelType tunnelType = ESendTunnelType.TCP) : base(EMsgType.LoginRtn, false, responseTo, tunnelType)
         {
             Success = success;
-            UDP_Port = udp_Port;
+            ServerUDP_Port = serverudp_Port;
         }
     }
 }

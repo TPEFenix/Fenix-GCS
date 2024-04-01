@@ -5,6 +5,7 @@ using System.Threading;
 using System.Net.Sockets;
 using System.Collections.Generic;
 using System.Text;
+using FenixGCSApi.ConstantsLib;
 
 
 namespace FenixGCSApi.Server
@@ -16,41 +17,47 @@ namespace FenixGCSApi.Server
     {
         private int UDP_Port = 30000;
         public Encoding Encoding = Encoding.UTF8;
-
         public LoginProcess LoginProcess;
         public LogEvent OnLog { get; set; }
         public TCPClientConnectedEvent TCPClientConnected;
         public CancellationToken ListenerCancellationToken { get; set; } = new CancellationToken();
-        private TcpListener _connectListener;
-
-        private readonly object _loginLocker = new object(); 
+        private TcpListener _tcpListener;
+        private UdpClient _udpClient;
+        private readonly object _loginLocker = new object();
         public List<ClientEntity> _connectingClient = new List<ClientEntity>();
         public Dictionary<string, ClientEntity> _connectedClient = new Dictionary<string, ClientEntity>();
 
-        public void Start(IPEndPoint listenerIPEndPoint)
+        public IPEndPoint TCPIPEndPoint { private set; get; }
+        public IPEndPoint UDPIPEndPoint { private set; get; }
+
+        public void Start(IPAddress ip, int tcpPort, int udpPort)
         {
+            TCPIPEndPoint = new IPEndPoint(ip, tcpPort);
+            UDPIPEndPoint = new IPEndPoint(ip, udpPort);
+
+            _udpClient = new UdpClient(UDPIPEndPoint);
+            _tcpListener = new TcpListener(TCPIPEndPoint);
             ListenerCancellationToken = new CancellationToken();
-            Task.Run(() => { ProcessConnectListener(listenerIPEndPoint, ListenerCancellationToken); }, ListenerCancellationToken);
+            Task.Run(() => { ProcessConnectListener(ListenerCancellationToken); }, ListenerCancellationToken);
         }
 
-        private void ProcessConnectListener(IPEndPoint iPEndPoint, CancellationToken token)
+        private void ProcessConnectListener(CancellationToken token)
         {
-            _connectListener = new TcpListener(iPEndPoint);
-
-            _connectListener.Start();
+            _tcpListener.Start();
             this.InfoLog("開啟監聽");
 
             while (!token.IsCancellationRequested)
             {
                 try
                 {
-                    TcpClient client = _connectListener.AcceptTcpClient();
-                    this.InfoLog("接收連入，外拋事件");
-                    ClientEntity entity = new ClientEntity(client);
+                    TcpClient client = _tcpListener.AcceptTcpClient();
+                    this.InfoLog($"TcpClientConnected IP = {((IPEndPoint)client.Client.RemoteEndPoint).Address.ToString()} , Port = {((IPEndPoint)client.Client.RemoteEndPoint).Port}");
+                    ClientEntity entity = new ClientEntity(client, _udpClient);
                     lock (_loginLocker)
                         _connectingClient.Add(entity);
                     entity.OnClientReceive += Entity_OnClientReceive;
                     entity.StartListen();
+                    entity.SendToTarget(Constants.PleaseLogin, Client.ESendTunnelType.TCP);
                     TCPClientConnected?.Invoke(client);
                 }
                 catch (Exception ex)
@@ -68,7 +75,7 @@ namespace FenixGCSApi.Server
         {
             GCSCommandPack pack = GCSCommandPack.Deserialize(data);
             #region 登入請求
-            if (pack .EMsgType == EMsgType.Login&& entity.Logged == false && _connectingClient.Contains(entity))
+            if (pack.EMsgType == EMsgType.Login && entity.Logged == false && _connectingClient.Contains(entity))
             {
                 GCSCommand_Login_Request recvData = (GCSCommand_Login_Request)pack;
 
@@ -80,7 +87,7 @@ namespace FenixGCSApi.Server
                 bool success = LoginProcess.Invoke(recvData.UserID, recvData.UserPwd);
                 GCSCommandPack loginRtn = new GCSCommand_Login_Response(UDP_Port, success, recvData.ID);
                 var rtn = loginRtn.Serialize();
-                entity.Send(rtn);
+                entity.SendToTarget(rtn, Client.ESendTunnelType.TCP);
                 entity.USER_ID = recvData.UserID;
                 entity.USER_NAME = recvData.UserName;
                 lock (_loginLocker)
