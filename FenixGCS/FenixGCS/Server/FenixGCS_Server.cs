@@ -6,6 +6,7 @@ using System.Net.Sockets;
 using System.Collections.Generic;
 using System.Text;
 using FenixGCSApi.ConstantsLib;
+using System.Net.Http;
 
 
 namespace FenixGCSApi.Server
@@ -25,7 +26,11 @@ namespace FenixGCSApi.Server
         private UdpClient _udpClient;
         private readonly object _loginLocker = new object();
         public List<ClientEntity> _connectingClient = new List<ClientEntity>();
-        public Dictionary<string, ClientEntity> _connectedClient = new Dictionary<string, ClientEntity>();
+        public Dictionary<string, ClientEntity> _connectedClient_IDDic = new Dictionary<string, ClientEntity>();
+        public Dictionary<IPEndPoint, string> _connectedClient_IPDic = new Dictionary<IPEndPoint, string>();
+
+        private CancellationTokenSource _udpListenCancelTokenSource;
+        private CancellationTokenSource _udpFormatterCancelTokenSource;
 
         public IPEndPoint TCPIPEndPoint { private set; get; }
         public IPEndPoint UDPIPEndPoint { private set; get; }
@@ -57,7 +62,7 @@ namespace FenixGCSApi.Server
                         _connectingClient.Add(entity);
                     entity.OnClientReceive += Entity_OnClientReceive;
                     entity.StartListen();
-                    entity.SendPackDataToTarget( new GCSCommand_LoginHint(), Client.ESendTunnelType.TCP);
+                    entity.SendPackToTarget( new GCSCommand_LoginHint());
                     TCPClientConnected?.Invoke(client);
                 }
                 catch (Exception ex)
@@ -70,6 +75,24 @@ namespace FenixGCSApi.Server
 
             }
         }
+        private void StartListenFromUDPThread()
+        {
+            if (_udpListenCancelTokenSource != null)
+                _udpListenCancelTokenSource.Cancel();
+            _udpListenCancelTokenSource = new CancellationTokenSource();
+
+            Task.Run(() =>
+            {
+                while (!_udpListenCancelTokenSource.IsCancellationRequested)
+                {
+                    IPEndPoint remoteIP = null;
+                    byte[] data = _udpClient.Receive(ref remoteIP);
+
+                }
+            });
+
+        }
+
 
         private void Entity_OnClientReceive(ClientEntity entity, byte[] data)
         {
@@ -90,18 +113,20 @@ namespace FenixGCSApi.Server
                 entity.SendBinaryToTarget(rtn, Client.ESendTunnelType.TCP);
                 entity.USER_ID = recvData.UserID;
                 entity.USER_NAME = recvData.UserName;
+                entity.UdpTargetEndPoint = new IPEndPoint(entity.RemoteIP, recvData.Client_UDP_Port);
                 lock (_loginLocker)
                     _connectingClient.Remove(entity);
                 if (success)
                 {
                     //檢查搶登
-                    if (_connectedClient.ContainsKey(entity.USER_ID))
+                    if (_connectedClient_IDDic.ContainsKey(entity.USER_ID))
                     {
                         //剔退舊的
-                        var old = _connectedClient[entity.USER_ID];
+                        var old = _connectedClient_IDDic[entity.USER_ID];
                         old.ProcessKickout();
                     }
-                    _connectedClient[entity.USER_ID] = entity;
+
+                    _connectedClient_IDDic[entity.USER_ID] = entity;
                 }
             }
             #endregion

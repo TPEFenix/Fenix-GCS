@@ -45,8 +45,6 @@ namespace FenixGCSApi.Client
 
     public class FenixGCS_Client : ILogable
     {
-
-
         /// <summary>
         /// Log紀錄事件
         /// </summary>
@@ -56,6 +54,7 @@ namespace FenixGCSApi.Client
 
         private ConcurrentDictionary<string, ManualResetEvent> _sendingRequestHooks = new ConcurrentDictionary<string, ManualResetEvent>();
         private ConcurrentDictionary<string, byte[]> _responseCollection = new ConcurrentDictionary<string, byte[]>();
+        private ManualResetEvent _pleaseLogin = new ManualResetEvent(false);
 
         private TcpClient _tcpClient;
         private UdpClient _udpClient;
@@ -75,8 +74,6 @@ namespace FenixGCSApi.Client
         private KeepJobQueue<byte[]> _tcpSendJobQueue;
         private KeepJobQueue<byte[]> _udpSendJobQueue;
         private KeepJobQueue<byte[]> _receiveJobQueue;
-
-        private ManualResetEvent _pleaseLogin = new ManualResetEvent(false);
 
         public bool IsPleaseLoginRecv(byte[] recv)
         {
@@ -117,6 +114,7 @@ namespace FenixGCSApi.Client
             StartListenFromTCPThread();
             _udpClient = new UdpClient(new IPEndPoint(IPAddress.Any, 0));
             _tcpSendJobQueue = new KeepJobQueue<byte[]>(SendByTCP);
+            _udpSendJobQueue = new KeepJobQueue<byte[]>(SendByUDP);
 
             if (!_pleaseLogin.WaitOne(5000))//等待伺服器說明可以登入
                 return false;
@@ -131,8 +129,7 @@ namespace FenixGCSApi.Client
                     {
                         EClientState = EClientState.Connected;
                         _serverUDPEndPoint = new IPEndPoint(serverListenIP.Address, rtnData.Result.ServerUDP_Port);
-                        _tcpSendJobQueue = new KeepJobQueue<byte[]>(SendByTCP);
-                        _udpSendJobQueue = new KeepJobQueue<byte[]>(SendByUDP);
+
                         StartRecvFromUDPFormatter();
                         StartListenFromUDPThread();
                         return true;
@@ -162,15 +159,14 @@ namespace FenixGCSApi.Client
         /// <summary>
         /// 直接傳送資料給Server(建議還是使用特定的指令函式)
         /// </summary>
-        public void SendToServer(byte[] data, ESendTunnelType type)
+        public void SendBinaryToServer(byte[] data, ESendTunnelType type)
         {
             if (type == ESendTunnelType.TCP)
                 _tcpSendJobQueue.Enqueue(data);
             else if (type == ESendTunnelType.UDP)
                 _udpSendJobQueue.Enqueue(data);
         }
-
-        public byte[] SendRequestToServer(GCSCommandPack request, ESendTunnelType type, int timeout = Timeout.Infinite)
+        public GCSCommandPack SendRequestPackToServer(GCSCommandPack request, ESendTunnelType type, int timeout = Timeout.Infinite)
         {
             var id = request.ID;
             if (!request.IsRequest)
@@ -178,7 +174,7 @@ namespace FenixGCSApi.Client
             _sendingRequestHooks[id] = new ManualResetEvent(false);
 
             var serialized = request.Serialize();
-            SendToServer(serialized, type);
+            SendBinaryToServer(serialized, type);
 
             if (!_sendingRequestHooks[id].WaitOne(timeout))
                 throw new TimeoutException("Timeout");
@@ -186,8 +182,15 @@ namespace FenixGCSApi.Client
             _sendingRequestHooks.TryRemove(id, out ManualResetEvent manualResetEvent);
             if (!_responseCollection.TryRemove(id, out byte[] rtn))
                 throw new Exception("Can't find Rtn");
-            return rtn;
+
+            return GCSCommandPack.Deserialize(rtn);
         }
+        public void SendPackToServer(GCSCommandPack pack)
+        {
+            var serialized = pack.Serialize();
+            SendBinaryToServer(serialized, pack.TunnelType);
+        }
+
 
         private void SendByTCP(byte[] data)
         {
@@ -198,7 +201,6 @@ namespace FenixGCSApi.Client
             var sendData = FGCSByteFormatter.GenerateSendArray(data);
             _udpClient.Send(sendData, sendData.Length, _serverUDPEndPoint);
         }
-
         private void StartListenFromTCPThread()
         {
             if (_tcpListenCancelTokenSource != null)
@@ -261,8 +263,6 @@ namespace FenixGCSApi.Client
                 }
             });
         }
-
-
         private void ReceiveData(byte[] recv)
         {
             //處理Response
@@ -292,9 +292,8 @@ namespace FenixGCSApi.Client
             GCSCommand_Login_Request data = new GCSCommand_Login_Request(userID, userPwd, userName, localUDPEndPoint.Port);
             try
             {
-                var rtnByte = SendRequestToServer(data, ESendTunnelType.TCP, timeout);
-                var obj = GCSCommandPack.Deserialize<GCSCommand_Login_Response>(rtnByte);
-                ActionResult<GCSCommand_Login_Response> rtn = new ActionResult<GCSCommand_Login_Response>(true, obj);
+                var obj = SendRequestPackToServer(data, ESendTunnelType.TCP, timeout);
+                ActionResult<GCSCommand_Login_Response> rtn = new ActionResult<GCSCommand_Login_Response>(true, obj as GCSCommand_Login_Response);
                 return rtn;
             }
             catch (TimeoutException)

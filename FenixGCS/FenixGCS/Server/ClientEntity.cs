@@ -30,12 +30,14 @@ namespace FenixGCSApi.Server
         private CancellationTokenSource _tcpFormatterCancelTokenSource;
         private CancellationTokenSource _udpFormatterCancelTokenSource;
 
-        public IPEndPoint ServerUDPEndPoint;
+        public IPEndPoint ServerUDPEndPoint => (IPEndPoint)_serverUDP.Client.LocalEndPoint;
         public IPEndPoint UdpTargetEndPoint;
 
         private KeepJobQueue<byte[]> _tcpSendJobQueue;
         private KeepJobQueue<byte[]> _udpSendJobQueue;
         private KeepJobQueue<byte[]> _receiveJobQueue;
+
+        public IPAddress RemoteIP => ((IPEndPoint)_tcpClient.Client.RemoteEndPoint).Address;
 
         public string USER_ID { get; set; }
         public string USER_NAME { get; set; }
@@ -62,7 +64,7 @@ namespace FenixGCSApi.Server
         private void SendByUDP(byte[] data)
         {
             var sendData = FGCSByteFormatter.GenerateSendArray(data);
-            _serverUDP.Send(sendData, sendData.Length, ServerUDPEndPoint);
+            _serverUDP.Send(sendData, sendData.Length, UdpTargetEndPoint);
         }
 
         /// <summary>
@@ -79,10 +81,9 @@ namespace FenixGCSApi.Server
         /// <summary>
         /// 直接傳送資料給Server(送出Pack)
         /// </summary>
-        public void SendPackDataToTarget(GCSCommandPack pack, ESendTunnelType type)
+        public void SendPackToTarget(GCSCommandPack pack)
         {
-            byte[] binary = MemoryPackSerializer.Serialize(pack);
-            SendBinaryToTarget(binary, type);
+            SendBinaryToTarget(pack.Serialize(), pack.TunnelType);
         }
 
         private void StartListenFromTCPThread()

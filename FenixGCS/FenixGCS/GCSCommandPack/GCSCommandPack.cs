@@ -12,6 +12,7 @@ namespace FenixGCSApi
     {
         public EMsgType EMsgType { get; set; }
         public string ID { get; set; }
+        public string SendUserID { get; set; }
         public bool IsRequest { get; set; }
         public string ResponseTo { get; set; }
         public ESendTunnelType TunnelType { get; set; }
