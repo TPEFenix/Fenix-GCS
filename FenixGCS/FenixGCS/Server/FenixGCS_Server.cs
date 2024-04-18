@@ -16,6 +16,8 @@ namespace FenixGCSApi.Server
 
     public class FenixGCS_Server : ILogable
     {
+        public static readonly string SERVERSENDERID = (char)6 + "#ServerID" + (char)6;
+
         private int UDP_Port = 30000;
         public Encoding Encoding = Encoding.UTF8;
         public LoginProcess LoginProcess;
@@ -62,7 +64,7 @@ namespace FenixGCSApi.Server
                         _connectingClient.Add(entity);
                     entity.OnClientReceive += Entity_OnClientReceive;
                     entity.StartListen();
-                    entity.SendPackToTarget( new GCSCommand_LoginHint());
+                    entity.SendPackToTarget(new GCSCommand_LoginHint());
                     TCPClientConnected?.Invoke(client);
                 }
                 catch (Exception ex)
