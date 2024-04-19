@@ -4,8 +4,14 @@ using MemoryPack;
 
 namespace FenixGCSApi
 {
-    [MemoryPackUnion(0, typeof(GCSRequestPack))]
-    [MemoryPackUnion(1, typeof(GCSResponsePack))]
+    public interface IGCSRequestPack { }
+    public interface IGCSResponsePack
+    {
+        bool Success { get; set; }
+        string ResponseTo { get; set; }
+    }
+
+    [MemoryPackUnion(0, typeof(FakeGCSPack))]
     [MemoryPackable]
     public abstract partial class GCSPack
     {
@@ -13,23 +19,13 @@ namespace FenixGCSApi
         public string PackID { get; set; } = GUIDGetter.Get();
         public virtual ESendTunnelType SendTunnelType { get; set; } = ESendTunnelType.UDP;
 
-        public byte[] Serialize()
+        public virtual byte[] Serialize()
         {
             return MemoryPackSerializer.Serialize(this);
         }
-        public static GCSPack Deserialize(byte[] data)
-        {
-            return MemoryPackSerializer.Deserialize<GCSPack>(data);
-        }
         public static T Deserialize<T>(byte[] data) where T : GCSPack
         {
-            var baseClass = Deserialize(data);
-            if (baseClass == null)
-                return null;
-            if (baseClass is T)
-                return (T)baseClass;
-            else
-                return null;
+            return MemoryPackSerializer.Deserialize<T>(data);
         }
 
         public static implicit operator byte[](GCSPack commandPack)
@@ -38,21 +34,9 @@ namespace FenixGCSApi
         }
         public static explicit operator GCSPack(byte[] data)
         {
-            return Deserialize(data);
+            return Deserialize<GCSPack>(data);
         }
     }
-
     [MemoryPackable]
-    public abstract partial class GCSRequestPack : GCSPack
-    {
-        public override ESendTunnelType SendTunnelType { get; set; } = ESendTunnelType.TCP;
-    }
-
-    [MemoryPackable]
-    public abstract partial class GCSResponsePack : GCSPack
-    {
-        public override ESendTunnelType SendTunnelType { get; set; } = ESendTunnelType.TCP;
-        public required bool Success { get; set; }
-        public required string ResponseTo { get; set; }
-    }
+    internal partial class FakeGCSPack : GCSPack { }
 }

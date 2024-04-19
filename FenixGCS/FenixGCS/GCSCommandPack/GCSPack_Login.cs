@@ -9,12 +9,6 @@ namespace FenixGCSApi
 {
     #region MemoryPackUnion
     [MemoryPackUnion(10, typeof(GCSPack_LoginRequest))]
-    public partial class GCSRequestPack  { }
-
-    [MemoryPackUnion(11, typeof(GCSPack_LoginResponse))]
-    public partial class GCSResponsePack  { }
-
-    [MemoryPackUnion(10, typeof(GCSPack_LoginRequest))]
     [MemoryPackUnion(11, typeof(GCSPack_LoginResponse))]
     [MemoryPackUnion(12, typeof(GCSPack_LoginHint))]
     public partial class GCSPack { }
@@ -22,18 +16,20 @@ namespace FenixGCSApi
 
 
     [MemoryPackable]
-    public partial class GCSPack_LoginRequest : GCSRequestPack
+    public partial class GCSPack_LoginRequest : GCSPack, IGCSRequestPack
     {
-        public required string UserID { get; set; }
-        public required string UserPwd { get; set; }
-        public required string UserName { get; set; }
-        public required int Client_UDP_Port { get; set; }
+        public string UserID { get; set; }
+        public string UserPwd { get; set; }
+        public string UserName { get; set; }
+        public int Client_UDP_Port { get; set; }
     }
 
     [MemoryPackable]
-    public partial class GCSPack_LoginResponse : GCSResponsePack
+    public partial class GCSPack_LoginResponse : GCSPack, IGCSResponsePack
     {
-        public required int ServerUDP_Port { get; set; }
+        public int ServerUDP_Port { get; set; }
+        public bool Success { get; set; }
+        public string ResponseTo { get; set; }
     }
 
     [MemoryPackable]
