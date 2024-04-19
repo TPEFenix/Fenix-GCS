@@ -123,7 +123,7 @@ namespace FenixGCSApi.Client
             var rtnData = ServerLogin(userID, userPwd, userName, 5000);
             if (rtnData.Success)
             {
-                if (rtnData.Result.EMsgType == EMsgType.LoginRtn)
+                if (rtnData.Result is GCSPack_LoginResponse)
                 {
                     if (rtnData.Result.Success)
                     {
@@ -166,14 +166,12 @@ namespace FenixGCSApi.Client
             else if (type == ESendTunnelType.UDP)
                 _udpSendJobQueue.Enqueue(data);
         }
-        public GCSCommandPack SendRequestPackToServer(GCSCommandPack request, ESendTunnelType type, int timeout = Timeout.Infinite)
+        public IGCSResponsePack SendRequestPackToServer(IGCSRequestPack request, ESendTunnelType type, int timeout = Timeout.Infinite)
         {
-            var id = request.ID;
-            if (!request.IsRequest)
-                throw new Exception("this Package is not request");
+            var id = request.PackID;
             _sendingRequestHooks[id] = new ManualResetEvent(false);
 
-            var serialized = request.Serialize();
+            byte[] serialized = request.Serialize();
             SendBinaryToServer(serialized, type);
 
             if (!_sendingRequestHooks[id].WaitOne(timeout))
@@ -183,12 +181,12 @@ namespace FenixGCSApi.Client
             if (!_responseCollection.TryRemove(id, out byte[] rtn))
                 throw new Exception("Can't find Rtn");
 
-            return GCSCommandPack.Deserialize(rtn);
+            return (IGCSResponsePack)GCSPack.Deserialize<GCSPack>(rtn);
         }
-        public void SendPackToServer(GCSCommandPack pack)
+        public void SendPackToServer(GCSPack pack)
         {
             var serialized = pack.Serialize();
-            SendBinaryToServer(serialized, pack.TunnelType);
+            SendBinaryToServer(serialized, pack.SendTunnelType);
         }
 
 
@@ -266,20 +264,21 @@ namespace FenixGCSApi.Client
         private void ReceiveData(byte[] recv)
         {
             //處理Response
-            GCSCommandPack data = GCSCommandPack.Deserialize(recv);
+            GCSPack data = (GCSPack)recv;
 
-            if (!string.IsNullOrEmpty(data.ResponseTo))
+            if (data is IGCSResponsePack)
             {
-                if (_sendingRequestHooks.TryGetValue(data.ResponseTo, out ManualResetEvent manualResetEvent))
+                IGCSResponsePack request = (IGCSResponsePack)data;
+                if (_sendingRequestHooks.TryGetValue(request.ResponseTo, out ManualResetEvent manualResetEvent))
                 {
-                    _responseCollection.TryAdd(data.ResponseTo, recv);
+                    _responseCollection.TryAdd(request.ResponseTo, recv);
                     manualResetEvent.Set();
                 }
                 return;
             }
             else//基本指令
             {
-                if (data.EMsgType == EMsgType.LoginHint)
+                if (data is GCSPack_LoginHint)
                 {
                     _pleaseLogin.Set();
                 }
@@ -287,22 +286,29 @@ namespace FenixGCSApi.Client
         }
 
         #region 溝通
-        public ActionResult<GCSCommand_Login_Response> ServerLogin(string userID, string userPwd, string userName, int timeout = Timeout.Infinite)
+        public ActionResult<GCSPack_LoginResponse> ServerLogin(string userID, string userPwd, string userName, int timeout = Timeout.Infinite)
         {
-            GCSCommand_Login_Request data = new GCSCommand_Login_Request(userID, userPwd, userName, localUDPEndPoint.Port);
+            GCSPack_LoginRequest data = new GCSPack_LoginRequest()
+            {
+                Client_UDP_Port = localUDPEndPoint.Port,
+                SenderID = userID,
+                UserID = userID,
+                UserName = userName,
+                UserPwd = userPwd,
+            };
             try
             {
                 var obj = SendRequestPackToServer(data, ESendTunnelType.TCP, timeout);
-                ActionResult<GCSCommand_Login_Response> rtn = new ActionResult<GCSCommand_Login_Response>(true, obj as GCSCommand_Login_Response);
+                ActionResult<GCSPack_LoginResponse> rtn = new ActionResult<GCSPack_LoginResponse>(true, obj as GCSPack_LoginResponse);
                 return rtn;
             }
             catch (TimeoutException)
             {
-                return new ActionResult<GCSCommand_Login_Response>(false, null, "Timeout");
+                return new ActionResult<GCSPack_LoginResponse>(false, null, "Timeout");
             }
             catch (Exception e)
             {
-                return new ActionResult<GCSCommand_Login_Response>(false, null, e.Message);
+                return new ActionResult<GCSPack_LoginResponse>(false, null, e.Message);
             }
         }
         #endregion

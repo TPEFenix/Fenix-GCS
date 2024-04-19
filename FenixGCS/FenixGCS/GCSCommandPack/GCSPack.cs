@@ -4,8 +4,15 @@ using MemoryPack;
 
 namespace FenixGCSApi
 {
-    public interface IGCSRequestPack { }
-    public interface IGCSResponsePack
+    public interface IGCSPack 
+    {
+        string SenderID { get; set; }
+        string PackID { get; set; }
+        ESendTunnelType SendTunnelType { get; set; }
+        byte[] Serialize();
+    }
+    public interface IGCSRequestPack: IGCSPack { }
+    public interface IGCSResponsePack: IGCSPack
     {
         bool Success { get; set; }
         string ResponseTo { get; set; }

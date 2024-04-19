@@ -64,7 +64,7 @@ namespace FenixGCSApi.Server
                         _connectingClient.Add(entity);
                     entity.OnClientReceive += Entity_OnClientReceive;
                     entity.StartListen();
-                    entity.SendPackToTarget(new GCSCommand_LoginHint());
+                    entity.SendPackToTarget(new GCSPack_LoginHint() { SenderID = SERVERSENDERID });
                     TCPClientConnected?.Invoke(client);
                 }
                 catch (Exception ex)
@@ -98,11 +98,11 @@ namespace FenixGCSApi.Server
 
         private void Entity_OnClientReceive(ClientEntity entity, byte[] data)
         {
-            GCSCommandPack pack = GCSCommandPack.Deserialize(data);
+            GCSPack pack = (GCSPack)data;
             #region 登入請求
-            if (pack.EMsgType == EMsgType.Login && entity.Logged == false && _connectingClient.Contains(entity))
+            if (pack is GCSPack_LoginRequest && entity.Logged == false && _connectingClient.Contains(entity))
             {
-                GCSCommand_Login_Request recvData = (GCSCommand_Login_Request)pack;
+                GCSPack_LoginRequest recvData = (GCSPack_LoginRequest)pack;
 
                 //ForTest
                 LoginProcess = (u, p) => { return true; };
@@ -110,7 +110,7 @@ namespace FenixGCSApi.Server
                     return;
 
                 bool success = LoginProcess.Invoke(recvData.UserID, recvData.UserPwd);
-                GCSCommandPack loginRtn = new GCSCommand_Login_Response(UDP_Port, success, recvData.ID);
+                GCSPack_LoginResponse loginRtn = new GCSPack_LoginResponse() { Success = success, SenderID = SERVERSENDERID, ServerUDP_Port = UDP_Port, ResponseTo = recvData.PackID };
                 var rtn = loginRtn.Serialize();
                 entity.SendBinaryToTarget(rtn, Client.ESendTunnelType.TCP);
                 entity.USER_ID = recvData.UserID;

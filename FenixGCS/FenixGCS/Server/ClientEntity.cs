@@ -81,9 +81,9 @@ namespace FenixGCSApi.Server
         /// <summary>
         /// 直接傳送資料給Server(送出Pack)
         /// </summary>
-        public void SendPackToTarget(GCSCommandPack pack)
+        public void SendPackToTarget(GCSPack pack)
         {
-            SendBinaryToTarget(pack.Serialize(), pack.TunnelType);
+            SendBinaryToTarget(pack.Serialize(), pack.SendTunnelType);
         }
 
         private void StartListenFromTCPThread()

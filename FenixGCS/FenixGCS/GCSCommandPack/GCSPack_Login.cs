@@ -1,4 +1,5 @@
-﻿using MemoryPack;
+﻿using FenixGCSApi.Client;
+using MemoryPack;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -18,23 +19,25 @@ namespace FenixGCSApi
     [MemoryPackable]
     public partial class GCSPack_LoginRequest : GCSPack, IGCSRequestPack
     {
-        public string UserID { get; set; }
-        public string UserPwd { get; set; }
-        public string UserName { get; set; }
-        public int Client_UDP_Port { get; set; }
+        public override ESendTunnelType SendTunnelType { get; set; } = ESendTunnelType.TCP;
+        public required string UserID { get; set; }
+        public required string UserPwd { get; set; }
+        public required string UserName { get; set; }
+        public required int Client_UDP_Port { get; set; }
     }
 
     [MemoryPackable]
     public partial class GCSPack_LoginResponse : GCSPack, IGCSResponsePack
     {
-        public int ServerUDP_Port { get; set; }
-        public bool Success { get; set; }
-        public string ResponseTo { get; set; }
+        public override ESendTunnelType SendTunnelType { get; set; } = ESendTunnelType.TCP;
+        public required int ServerUDP_Port { get; set; }
+        public required bool Success { get; set; }
+        public required string ResponseTo { get; set; }
     }
 
     [MemoryPackable]
     public partial class GCSPack_LoginHint : GCSPack
     {
-
+        public override ESendTunnelType SendTunnelType { get; set; } = ESendTunnelType.TCP;
     }
 }
