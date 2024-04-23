@@ -31,13 +31,15 @@ namespace FenixGCSApi.Server
         private CancellationTokenSource _udpFormatterCancelTokenSource;
 
         public IPEndPoint ServerUDPEndPoint => (IPEndPoint)_serverUDP.Client.LocalEndPoint;
-        public IPEndPoint UdpTargetEndPoint;
 
         private KeepJobQueue<byte[]> _tcpSendJobQueue;
         private KeepJobQueue<byte[]> _udpSendJobQueue;
         private KeepJobQueue<byte[]> _receiveJobQueue;
 
         public IPAddress RemoteIP => ((IPEndPoint)_tcpClient.Client.RemoteEndPoint).Address;
+
+        public IPEndPoint RemoteTCPEndPoint => ((IPEndPoint)_tcpClient.Client.RemoteEndPoint);
+        public IPEndPoint RemoteUDPEndPoint;
 
         public string USER_ID { get; set; }
         public string USER_NAME { get; set; }
@@ -64,7 +66,7 @@ namespace FenixGCSApi.Server
         private void SendByUDP(byte[] data)
         {
             var sendData = FGCSByteFormatter.GenerateSendArray(data);
-            _serverUDP.Send(sendData, sendData.Length, UdpTargetEndPoint);
+            _serverUDP.Send(sendData, sendData.Length, RemoteUDPEndPoint);
         }
 
         /// <summary>

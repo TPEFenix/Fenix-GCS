@@ -23,7 +23,7 @@ namespace FenixGCSApi
         public required string UserID { get; set; }
         public required string UserPwd { get; set; }
         public required string UserName { get; set; }
-        public required int Client_UDP_Port { get; set; }
+        public required IPEndPointStruct Client_UDP_Info { get; set; }
     }
 
     [MemoryPackable]

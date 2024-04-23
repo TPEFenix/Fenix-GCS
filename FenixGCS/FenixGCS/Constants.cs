@@ -6,6 +6,8 @@ namespace FenixGCSApi.ConstantsLib
 {
     public class Constants
     {
-        public static byte[] PleaseLogin = new byte[] { 0x07, 0x07, 0x07 };
+        public static byte[] CheckUDPRemotePoint = new byte[] { 0x07, 0x07, 0x07, 0x08 };
+
+
     }
 }

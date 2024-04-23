@@ -10,6 +10,7 @@ using System.Collections.Generic;
 using System.Collections.Concurrent;
 using FenixGCSApi.ByteFormatter;
 using FenixGCSApi.ConstantsLib;
+using MemoryPack;
 
 namespace FenixGCSApi.Client
 {
@@ -45,6 +46,8 @@ namespace FenixGCSApi.Client
 
     public class FenixGCS_Client : ILogable
     {
+        public string UserID { get; set; }
+
         /// <summary>
         /// Log紀錄事件
         /// </summary>
@@ -58,6 +61,7 @@ namespace FenixGCSApi.Client
 
         private TcpClient _tcpClient;
         private UdpClient _udpClient;
+
 
         private FGCSByteFormatter _tcpByteFormatter = new FGCSByteFormatter();
         private FGCSByteFormatter _udpByteFormatter = new FGCSByteFormatter();
@@ -75,50 +79,55 @@ namespace FenixGCSApi.Client
         private KeepJobQueue<byte[]> _udpSendJobQueue;
         private KeepJobQueue<byte[]> _receiveJobQueue;
 
-        public bool IsPleaseLoginRecv(byte[] recv)
-        {
-            bool success = true;
-            if (recv.Length == 3)
-            {
-                for (int i = 0; i < recv.Length; i++)
-                {
-                    if (Constants.PleaseLogin[i] != recv[i])
-                    {
-                        success = false;
-                        continue;
-                    }
-                }
-            }
-            else
-            {
-                success = false;
-            }
-            return success;
-        }
-
         public FenixGCS_Client()
         {
             EClientState = EClientState.Init;
             _receiveJobQueue = new KeepJobQueue<byte[]>(ReceiveData);
         }
 
-        public bool ConnectToServer(IPEndPoint serverListenIP, string userID, string userPwd, string userName)
+        
+        /// <summary>
+        /// 登入到遊戲伺服器
+        /// </summary>
+        /// <param name="serverListenIP">登入監聽IPEndPoint</param>
+        /// <param name="udpListenPoint"></param>
+        /// <param name="userID"></param>
+        /// <param name="userPwd"></param>
+        /// <param name="userName"></param>
+        /// <returns></returns>
+        public bool ConnectToServer(IPEndPoint serverListenIP, IPEndPoint udpListenPoint, string userID, string userPwd, string userName)
         {
+            UserID = userID;
             _pleaseLogin = new ManualResetEvent(false);
             EClientState = EClientState.Connecting;
 
-            _tcpClient = new TcpClient(IPAddress.Any.AddressFamily);
+            _tcpClient = new TcpClient(IPPortFinder.FindAvailableTcpEndpoint());
             _tcpClient.Connect(serverListenIP);
 
             StartRecvFromTCPFormatter();
             StartListenFromTCPThread();
-            _udpClient = new UdpClient(new IPEndPoint(IPAddress.Any, 0));
             _tcpSendJobQueue = new KeepJobQueue<byte[]>(SendByTCP);
             _udpSendJobQueue = new KeepJobQueue<byte[]>(SendByUDP);
 
             if (!_pleaseLogin.WaitOne(5000))//等待伺服器說明可以登入
                 return false;
             _pleaseLogin.Reset();
+
+            //查詢UDP
+            _udpClient = new UdpClient(0);
+            _udpClient.Connect(udpListenPoint);
+            byte[] udpRemoteRtn = null;
+            Task recvTask = Task.Run(() => 
+            {
+                IPEndPoint remote = null;
+                udpRemoteRtn = _udpClient.Receive(ref remote); 
+            });
+            _udpClient.Send(Constants.CheckUDPRemotePoint, Constants.CheckUDPRemotePoint.Length);
+            if (!recvTask.Wait(3000))
+                return false;//無法取得UDPPort
+
+            //得到自己的UDP遠端IP，要傳送給Server讓Server認識
+            IPEndPoint udpInfo = MemoryPackSerializer.Deserialize<IPEndPointStruct>(udpRemoteRtn);
 
             var rtnData = ServerLogin(userID, userPwd, userName, 5000);
             if (rtnData.Success)
@@ -129,7 +138,7 @@ namespace FenixGCSApi.Client
                     {
                         EClientState = EClientState.Connected;
                         _serverUDPEndPoint = new IPEndPoint(serverListenIP.Address, rtnData.Result.ServerUDP_Port);
-
+                        _udpClient.Connect(_serverUDPEndPoint);
                         StartRecvFromUDPFormatter();
                         StartListenFromUDPThread();
                         return true;
@@ -185,6 +194,7 @@ namespace FenixGCSApi.Client
         }
         public void SendPackToServer(GCSPack pack)
         {
+            pack.SenderID = UserID;
             var serialized = pack.Serialize();
             SendBinaryToServer(serialized, pack.SendTunnelType);
         }
@@ -197,7 +207,7 @@ namespace FenixGCSApi.Client
         private void SendByUDP(byte[] data)
         {
             var sendData = FGCSByteFormatter.GenerateSendArray(data);
-            _udpClient.Send(sendData, sendData.Length, _serverUDPEndPoint);
+            _udpClient.Send(sendData, sendData.Length);
         }
         private void StartListenFromTCPThread()
         {
@@ -225,11 +235,15 @@ namespace FenixGCSApi.Client
             {
                 while (!_udpListenCancelTokenSource.IsCancellationRequested)
                 {
-                    IPEndPoint recvIP = null;
-                    byte[] data = _udpClient.Receive(ref recvIP);
-                    if (!recvIP.Equals(_serverUDPEndPoint))
-                        continue;
-                    _udpByteFormatter.InsertSourceData(data);
+                    try
+                    {
+                        IPEndPoint recvIP = null;
+                        byte[] data = _udpClient.Receive(ref recvIP);
+                        if (!recvIP.Equals(_serverUDPEndPoint))
+                            continue;
+                        _udpByteFormatter.InsertSourceData(data);
+                    }
+                    catch (Exception e) { Console.WriteLine("去你得"); }
                 }
             });
         }
@@ -263,9 +277,16 @@ namespace FenixGCSApi.Client
         }
         private void ReceiveData(byte[] recv)
         {
-            //處理Response
-            GCSPack data = (GCSPack)recv;
+            var data = GCSPack.Deserialize<GCSPack>(recv);
+            #region 處理錯誤類別
+            if (data == null)
+            {
+                OnLog?.Invoke(ELogLevel.Error, "ErrorData");
+                return;
+            }
+            #endregion
 
+            #region 處理Response
             if (data is IGCSResponsePack)
             {
                 IGCSResponsePack request = (IGCSResponsePack)data;
@@ -276,12 +297,11 @@ namespace FenixGCSApi.Client
                 }
                 return;
             }
-            else//基本指令
+            #endregion
+
+            if (data is GCSPack_LoginHint)
             {
-                if (data is GCSPack_LoginHint)
-                {
-                    _pleaseLogin.Set();
-                }
+                _pleaseLogin.Set();
             }
         }
 
@@ -290,7 +310,7 @@ namespace FenixGCSApi.Client
         {
             GCSPack_LoginRequest data = new GCSPack_LoginRequest()
             {
-                Client_UDP_Port = localUDPEndPoint.Port,
+                Client_UDP_Info = localUDPEndPoint,
                 SenderID = userID,
                 UserID = userID,
                 UserName = userName,
