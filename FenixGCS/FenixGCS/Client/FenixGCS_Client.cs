@@ -116,12 +116,14 @@ namespace FenixGCSApi.Client
             //查詢UDP
             _udpClient = new UdpClient(0);
             _udpClient.Connect(udpListenPoint);
+
             byte[] udpRemoteRtn = null;
             Task recvTask = Task.Run(() => 
             {
                 IPEndPoint remote = null;
                 udpRemoteRtn = _udpClient.Receive(ref remote); 
             });
+
             _udpClient.Send(Constants.CheckUDPRemotePoint, Constants.CheckUDPRemotePoint.Length);
             if (!recvTask.Wait(3000))
                 return false;//無法取得UDPPort
@@ -138,7 +140,6 @@ namespace FenixGCSApi.Client
                     {
                         EClientState = EClientState.Connected;
                         _serverUDPEndPoint = new IPEndPoint(serverListenIP.Address, rtnData.Result.ServerUDP_Port);
-                        _udpClient.Connect(_serverUDPEndPoint);
                         StartRecvFromUDPFormatter();
                         StartListenFromUDPThread();
                         return true;

@@ -6,6 +6,9 @@ using System.Threading;
 
 namespace FenixGCSApi
 {
+    /// <summary>
+    /// 預先建立好存著用的GUID產生器，速度略快直接取Guid5%
+    /// </summary>
     public static class GUIDGetter
     {
         private static ConcurrentQueue<string> _guids = new ConcurrentQueue<string>();
@@ -17,7 +20,7 @@ namespace FenixGCSApi
             {
                 while (true)
                 {
-                    if (_guids.Count < 100)
+                    if (_guids.Count < 5000)
                     {
                         _guids.Enqueue(Guid.NewGuid().ToString());
                     }

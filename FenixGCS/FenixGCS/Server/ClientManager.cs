@@ -10,6 +10,7 @@ namespace FenixGCSApi.Server
     public class ClientManager
     {
 
+        private readonly object _lock = new object();
         private List< ClientEntity> _connectingClient { get; set; } = new List< ClientEntity>();
 
         //會在以下三個的都是已登入成功的
@@ -19,34 +20,46 @@ namespace FenixGCSApi.Server
 
         public void LoginUser(ClientEntity client)
         {
-            if (!_connectingClient.Contains(client))
-                return;//失敗
-            _connectingClient.Remove(client);
-            if (_dicByUserID.ContainsKey(client.USER_ID))//剔退
-                _dicByUserID[client.USER_ID].ProcessKickout();
+            lock (_lock)
+            {
+                if (!_connectingClient.Contains(client))
+                    return;//失敗
+                _connectingClient.Remove(client);
+                if (_dicByUserID.ContainsKey(client.USER_ID))//剔退
+                    _dicByUserID[client.USER_ID].ProcessKickout();
+            }
             _dicByUserID[client.USER_ID] = client;
             _dicByTCPInfo[client.RemoteTCPEndPoint] = client;
             _dicByUDPInfo[client.RemoteUDPEndPoint] = client;
         }
         public void SetClientConnecting(ClientEntity client)
         {
-            if (!_connectingClient.Contains(client))
+            lock (_lock)
             {
-                _connectingClient.Add(client);
+                if (!_connectingClient.Contains(client))
+                    _connectingClient.Add(client);
             }
         }
 
         public ClientEntity FindClientByID(string ID)
         {
-            return _dicByUserID[ID];
+            _dicByUserID.TryGetValue(ID, out ClientEntity returner);
+            return returner;
         }
         public ClientEntity FindClientByTCPInfo(IPEndPointStruct info)
         {
-            return _dicByTCPInfo[info];
+            _dicByTCPInfo.TryGetValue(info, out ClientEntity returner);
+            return returner;
         }
         public ClientEntity FindClientByUDPInfo(IPEndPointStruct info)
         {
-            return _dicByUDPInfo[info];
+            _dicByUDPInfo.TryGetValue(info, out ClientEntity returner);
+            return returner;
+        }
+
+        public bool IsEntityConnecting(ClientEntity entity)
+        {
+            return _connectingClient.Contains(entity);
         }
 
     }

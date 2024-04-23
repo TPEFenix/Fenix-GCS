@@ -25,14 +25,9 @@ namespace FenixGCSApi.Server
         public CancellationToken ListenerCancellationToken { get; set; } = new CancellationToken();
         private TcpListener _tcpListener;
         private UdpClient _udpClient;
-        private readonly object _loginLocker = new object();
-        public List<ClientEntity> _connectingClient = new List<ClientEntity>();
-
-        public Dictionary<string, ClientEntity> _connectedClient_IDDic = new Dictionary<string, ClientEntity>();
-        public Dictionary<IPEndPoint, ClientEntity> _connectedClient_TCPDic = new Dictionary<IPEndPoint, ClientEntity>();
-        public Dictionary<IPEndPoint, ClientEntity> _connectedClient_UDPDic = new Dictionary<IPEndPoint, ClientEntity>();
-
         private CancellationTokenSource _udpListenCancelTokenSource;
+
+        public ClientManager ClientManager { get; set; } = new ClientManager();
 
         public IPEndPoint TCPIPEndPoint { private set; get; }
         public int TCP_Port => TCPIPEndPoint.Port;
@@ -63,8 +58,7 @@ namespace FenixGCSApi.Server
                     TcpClient client = _tcpListener.AcceptTcpClient();
                     this.InfoLog($"TcpClientConnected IP = {((IPEndPoint)client.Client.RemoteEndPoint).Address.ToString()} , Port = {((IPEndPoint)client.Client.RemoteEndPoint).Port}");
                     ClientEntity entity = new ClientEntity(client, _udpClient);
-                    lock (_loginLocker)
-                        _connectingClient.Add(entity);
+                    ClientManager.SetClientConnecting(entity);
                     entity.OnClientReceive += Entity_OnClientReceive;
                     entity.StartListen();
                     entity.SendPackToTarget(new GCSPack_LoginHint() { SenderID = SERVERSENDERID });
@@ -121,19 +115,14 @@ namespace FenixGCSApi.Server
                         IPEndPointStruct iPEndPointStruct = remoteIP;
                         var infoBytes = MemoryPackSerializer.Serialize(iPEndPointStruct);
                         _udpClient.SendAsync(infoBytes, infoBytes.Length, remoteIP);
-                        return;
+                        continue;
                     }
-                    /*
-                    if (_connectedClient_UDPDic.ContainsKey(remoteIP))
-                    {
-                        string userID = _connectedClient_UDPDic[remoteIP];
-                        if (_connectedClient_IDDic.ContainsKey(userID))
-                        {
-                            var client = _connectedClient_IDDic[userID];
-                            client.InsertDataFromUDP(data);
-                        }
-                    }
-                    */
+
+                    ClientEntity target = ClientManager.FindClientByUDPInfo(remoteIP);
+                    if (target != null)
+                        target.InsertDataFromUDP(data);
+                    
+                    
                 }
             });
 
@@ -144,7 +133,7 @@ namespace FenixGCSApi.Server
         {
             GCSPack pack = (GCSPack)data;
             #region 登入請求
-            if (pack is GCSPack_LoginRequest && entity.Logged == false && _connectingClient.Contains(entity))
+            if (pack is GCSPack_LoginRequest && entity.Logged == false && ClientManager.IsEntityConnecting(entity))
             {
                 GCSPack_LoginRequest recvData = (GCSPack_LoginRequest)pack;
 
@@ -157,25 +146,13 @@ namespace FenixGCSApi.Server
                 GCSPack_LoginResponse loginRtn = new GCSPack_LoginResponse() { Success = success, SenderID = SERVERSENDERID, ServerUDP_Port = UDP_Port, ResponseTo = recvData.PackID };
                 var rtn = loginRtn.Serialize();
 
-                entity.SendBinaryToTarget(rtn, Client.ESendTunnelType.TCP);
                 entity.USER_ID = recvData.UserID;
                 entity.USER_NAME = recvData.UserName;
                 entity.RemoteUDPEndPoint = recvData.Client_UDP_Info;
 
-                lock (_loginLocker)
-                    _connectingClient.Remove(entity);
-                if (success)
-                {
-                    //檢查搶登
-                    if (_connectedClient_IDDic.ContainsKey(entity.USER_ID))
-                    {
-                        //剔退舊的
-                        var old = _connectedClient_IDDic[entity.USER_ID];
-                        old.ProcessKickout();
-                    }
-                    _connectedClient_IDDic[entity.USER_ID] = entity;
-                    _connectedClient_TCPDic[entity.RemoteTCPEndPoint] = entity;
-                }
+                ClientManager.LoginUser(entity);
+                entity.Logged = true;
+                entity.SendBinaryToTarget(rtn, Client.ESendTunnelType.TCP);
             }
             #endregion
             #region 登入後請求
