@@ -73,7 +73,7 @@ namespace FenixGCSApi.Client
         private CancellationTokenSource _udpFormatterCancelTokenSource;
 
         private IPEndPoint _serverUDPEndPoint;
-        private IPEndPoint localUDPEndPoint => (IPEndPoint)_udpClient.Client.LocalEndPoint;
+        private IPEndPoint MyRemoteUDPEndPoint;
 
         private KeepJobQueue<byte[]> _tcpSendJobQueue;
         private KeepJobQueue<byte[]> _udpSendJobQueue;
@@ -130,7 +130,7 @@ namespace FenixGCSApi.Client
 
             //得到自己的UDP遠端IP，要傳送給Server讓Server認識
             IPEndPoint udpInfo = MemoryPackSerializer.Deserialize<IPEndPointStruct>(udpRemoteRtn);
-
+            MyRemoteUDPEndPoint = udpInfo;
             var rtnData = ServerLogin(userID, userPwd, userName, 5000);
             if (rtnData.Success)
             {
@@ -311,7 +311,7 @@ namespace FenixGCSApi.Client
         {
             GCSPack_LoginRequest data = new GCSPack_LoginRequest()
             {
-                Client_UDP_Info = localUDPEndPoint,
+                Client_UDP_Info = MyRemoteUDPEndPoint,
                 SenderID = userID,
                 UserID = userID,
                 UserName = userName,

@@ -8,6 +8,7 @@ using System.Text;
 using FenixGCSApi.ConstantsLib;
 using System.Net.Http;
 using MemoryPack;
+using System.Collections;
 
 
 namespace FenixGCSApi.Server
@@ -112,25 +113,39 @@ namespace FenixGCSApi.Server
                     //先檢查是不是來查UDPPort的
                     if (IsCheckUDPPortRecv(data))
                     {
+                        OnLog?.Invoke( ELogLevel.Normal,"查詢UDP");
                         IPEndPointStruct iPEndPointStruct = remoteIP;
+                        OnLog?.Invoke(ELogLevel.Normal, $"(查詢)RemoteUDPEndPoint = {iPEndPointStruct.ipEndPoint.ToString()}");
+                        OnLog?.Invoke(ELogLevel.Normal, remoteIP.Address.ToString());
                         var infoBytes = MemoryPackSerializer.Serialize(iPEndPointStruct);
                         _udpClient.SendAsync(infoBytes, infoBytes.Length, remoteIP);
+                        OnLog?.Invoke(ELogLevel.Normal, "送回UDP");
                         continue;
                     }
-
+                    OnLog?.Invoke(ELogLevel.Normal, $"一般UDPremoteIP = {remoteIP.ToString()}");
                     ClientEntity target = ClientManager.FindClientByUDPInfo(remoteIP);
+
                     if (target != null)
+                    {
                         target.InsertDataFromUDP(data);
-                    
-                    
+                    }
+                    else
+                    {
+                        OnLog?.Invoke(ELogLevel.Normal, $"沒找到");
+                    }
+
+
                 }
             });
 
         }
 
-
+        DateTime start, end;
+        int count = 0;
+        int total = 0;
         private void Entity_OnClientReceive(ClientEntity entity, byte[] data)
         {
+            Console.WriteLine("Get");
             GCSPack pack = (GCSPack)data;
             #region 登入請求
             if (pack is GCSPack_LoginRequest && entity.Logged == false && ClientManager.IsEntityConnecting(entity))
@@ -149,10 +164,17 @@ namespace FenixGCSApi.Server
                 entity.USER_ID = recvData.UserID;
                 entity.USER_NAME = recvData.UserName;
                 entity.RemoteUDPEndPoint = recvData.Client_UDP_Info;
-
+                OnLog?.Invoke(ELogLevel.Normal, $"RemoteUDPEndPoint = {recvData.Client_UDP_Info.ipEndPoint.ToString()}");
                 ClientManager.LoginUser(entity);
                 entity.Logged = true;
                 entity.SendBinaryToTarget(rtn, Client.ESendTunnelType.TCP);
+                Console.WriteLine("Back");
+            }
+            if (pack is StringDataGCSPack)
+            {
+                Console.WriteLine("GetString");
+                StringDataGCSPack stringDataGCSPack = (StringDataGCSPack)pack;
+                Console.WriteLine(stringDataGCSPack.Data);
             }
             #endregion
             #region 登入後請求
