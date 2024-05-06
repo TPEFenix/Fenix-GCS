@@ -40,6 +40,15 @@ namespace FenixGCSApi.Server
                     _connectingClient.Add(client);
             }
         }
+        public void RemoveClientFromConnectingList(ClientEntity client)
+        {
+            lock (_lock)
+            {
+                if (!_connectingClient.Contains(client))
+                    return;//失敗
+                _connectingClient.Remove(client);
+            }
+        }
 
         public ClientEntity FindClientByID(string ID)
         {

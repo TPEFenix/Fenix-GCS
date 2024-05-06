@@ -85,7 +85,7 @@ namespace FenixGCSApi.Client
             _receiveJobQueue = new KeepJobQueue<byte[]>(ReceiveData);
         }
 
-        
+
         /// <summary>
         /// 登入到遊戲伺服器
         /// </summary>
@@ -118,14 +118,23 @@ namespace FenixGCSApi.Client
             _udpClient.Connect(udpListenPoint);
 
             byte[] udpRemoteRtn = null;
-            Task recvTask = Task.Run(() => 
+            bool udpDataGetFailed = false;
+            Task recvTask = Task.Run(() =>
             {
-                IPEndPoint remote = null;
-                udpRemoteRtn = _udpClient.Receive(ref remote); 
+                try
+                {
+                    IPEndPoint remote = null;
+                    udpRemoteRtn = _udpClient.Receive(ref remote);
+                }
+                catch (Exception e)
+                {
+                    OnLog?.Invoke(ELogLevel.Error, "獲取UDP外部訊息失敗:" + e.Message);
+                    udpDataGetFailed = true;
+                }
             });
 
             _udpClient.Send(Constants.CheckUDPRemotePoint, Constants.CheckUDPRemotePoint.Length);
-            if (!recvTask.Wait(3000))
+            if (!recvTask.Wait(3000) || udpDataGetFailed)
                 return false;//無法取得UDPPort
 
             //得到自己的UDP遠端IP，要傳送給Server讓Server認識
