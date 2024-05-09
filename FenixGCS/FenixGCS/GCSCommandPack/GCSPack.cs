@@ -16,6 +16,7 @@ namespace FenixGCSApi
     {
         bool Success { get; set; }
         string ResponseTo { get; set; }
+        string ResponseMsg { get; set; }
     }
 
     [MemoryPackUnion(0, typeof(BinaryDataGCSPack))]
@@ -55,9 +56,9 @@ namespace FenixGCSApi
         }
     }
     [MemoryPackable]
-    public  partial class BinaryDataGCSPack : GCSPack 
+    public partial class BinaryDataGCSPack : GCSPack
     {
-        public byte[] Data { get; set;}
+        public byte[] Data { get; set; }
     }
     [MemoryPackable]
     public partial class StringDataGCSPack : GCSPack

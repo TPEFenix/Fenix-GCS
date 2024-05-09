@@ -9,35 +9,25 @@ using System.Threading.Tasks;
 namespace FenixGCSApi
 {
     #region MemoryPackUnion
-    [MemoryPackUnion(10, typeof(GCSPack_LoginRequest))]
-    [MemoryPackUnion(11, typeof(GCSPack_LoginResponse))]
-    [MemoryPackUnion(12, typeof(GCSPack_LoginHint))]
+    [MemoryPackUnion(20, typeof(GCSPack_SignUpRequest))]
+    [MemoryPackUnion(21, typeof(GCSPack_SignUpResponse))]
     public partial class GCSPack { }
     #endregion
 
-
     [MemoryPackable]
-    public partial class GCSPack_LoginRequest : GCSPack, IGCSRequestPack
+    public partial class GCSPack_SignUpRequest : GCSPack, IGCSRequestPack
     {
         public override ESendTunnelType SendTunnelType { get; set; } = ESendTunnelType.TCP;
         public required string UserID { get; set; }
         public required string UserPwd { get; set; }
-        public required IPEndPointStruct Client_UDP_Info { get; set; }
     }
 
     [MemoryPackable]
-    public partial class GCSPack_LoginResponse : GCSPack, IGCSResponsePack
+    public partial class GCSPack_SignUpResponse : GCSPack, IGCSResponsePack
     {
         public override ESendTunnelType SendTunnelType { get; set; } = ESendTunnelType.TCP;
-        public required int ServerUDP_Port { get; set; }
         public required bool Success { get; set; }
         public required string ResponseTo { get; set; }
         public string ResponseMsg { get; set; }
-    }
-
-    [MemoryPackable]
-    public partial class GCSPack_LoginHint : GCSPack
-    {
-        public override ESendTunnelType SendTunnelType { get; set; } = ESendTunnelType.TCP;
     }
 }

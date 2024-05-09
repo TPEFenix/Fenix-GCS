@@ -62,7 +62,6 @@ namespace FenixGCSApi.Client
         private TcpClient _tcpClient;
         private UdpClient _udpClient;
 
-
         private FGCSByteFormatter _tcpByteFormatter = new FGCSByteFormatter();
         private FGCSByteFormatter _udpByteFormatter = new FGCSByteFormatter();
 
@@ -89,20 +88,20 @@ namespace FenixGCSApi.Client
         /// <summary>
         /// 登入到遊戲伺服器
         /// </summary>
-        /// <param name="serverListenIP">登入監聽IPEndPoint</param>
+        /// <param name="serverConnectServicesPoint">登入監聽IPEndPoint</param>
         /// <param name="udpListenPoint"></param>
         /// <param name="userID"></param>
         /// <param name="userPwd"></param>
         /// <param name="userName"></param>
         /// <returns></returns>
-        public bool ConnectToServer(IPEndPoint serverListenIP, IPEndPoint udpListenPoint, string userID, string userPwd, string userName)
+        public bool ConnectToServer(IPEndPoint serverConnectServicesPoint, IPEndPoint udpListenPoint, string userID, string userPwd)
         {
             UserID = userID;
             _pleaseLogin = new ManualResetEvent(false);
             EClientState = EClientState.Connecting;
 
             _tcpClient = new TcpClient(IPPortFinder.FindAvailableTcpEndpoint());
-            _tcpClient.Connect(serverListenIP);
+            _tcpClient.Connect(serverConnectServicesPoint);
 
             StartRecvFromTCPFormatter();
             StartListenFromTCPThread();
@@ -140,7 +139,7 @@ namespace FenixGCSApi.Client
             //得到自己的UDP遠端IP，要傳送給Server讓Server認識
             IPEndPoint udpInfo = MemoryPackSerializer.Deserialize<IPEndPointStruct>(udpRemoteRtn);
             MyRemoteUDPEndPoint = udpInfo;
-            var rtnData = ServerLogin(userID, userPwd, userName, 5000);
+            var rtnData = ServerLogin(userID, userPwd, 5000);
             if (rtnData.Success)
             {
                 if (rtnData.Result is GCSPack_LoginResponse)
@@ -148,7 +147,7 @@ namespace FenixGCSApi.Client
                     if (rtnData.Result.Success)
                     {
                         EClientState = EClientState.Connected;
-                        _serverUDPEndPoint = new IPEndPoint(serverListenIP.Address, rtnData.Result.ServerUDP_Port);
+                        _serverUDPEndPoint = new IPEndPoint(serverConnectServicesPoint.Address, rtnData.Result.ServerUDP_Port);
                         StartRecvFromUDPFormatter();
                         StartListenFromUDPThread();
                         return true;
@@ -173,6 +172,12 @@ namespace FenixGCSApi.Client
             //Server接收到final，以"Time"AES解密並核對資料是否符合資料庫所儲存的MD5Pwd
 
             return false;
+        }
+
+        public bool DefaultSignUp(IPEndPoint signUpServicesIP, string userID, string userPwd)
+        {
+
+            return true;
         }
 
         /// <summary>
@@ -316,14 +321,13 @@ namespace FenixGCSApi.Client
         }
 
         #region 溝通
-        public ActionResult<GCSPack_LoginResponse> ServerLogin(string userID, string userPwd, string userName, int timeout = Timeout.Infinite)
+        private ActionResult<GCSPack_LoginResponse> ServerLogin(string userID, string userPwd, int timeout = Timeout.Infinite)
         {
             GCSPack_LoginRequest data = new GCSPack_LoginRequest()
             {
                 Client_UDP_Info = MyRemoteUDPEndPoint,
                 SenderID = userID,
                 UserID = userID,
-                UserName = userName,
                 UserPwd = userPwd,
             };
             try
@@ -341,6 +345,42 @@ namespace FenixGCSApi.Client
                 return new ActionResult<GCSPack_LoginResponse>(false, null, e.Message);
             }
         }
+        public ActionResult<GCSPack_SignUpResponse> SignUpUser(IPEndPoint serverSignUpServicesPoint, string userID, string userPwd, int timeout = Timeout.Infinite)
+        {
+            GCSPack_SignUpRequest data = new GCSPack_SignUpRequest()
+            {
+                SenderID = userID,
+                UserID = userID,
+                UserPwd = userPwd,
+            };
+            TcpClient client = new TcpClient();
+            client = new TcpClient(IPPortFinder.FindAvailableTcpEndpoint());
+            client.Connect(serverSignUpServicesPoint);
+
+            try
+            {
+                client.Client.Send(data.Serialize());
+                byte[] recv = new byte[1024];
+                client.Client.Receive(recv);
+                var obj = (IGCSResponsePack)GCSPack.Deserialize<GCSPack>(recv);
+
+                ActionResult<GCSPack_SignUpResponse> rtn = new ActionResult<GCSPack_SignUpResponse>(true, obj as GCSPack_SignUpResponse);
+                client.Close();
+                return rtn;
+            }
+            catch (TimeoutException)
+            {
+                client.Close();
+                return new ActionResult<GCSPack_SignUpResponse>(false, null, "Timeout");
+            }
+            catch (Exception e)
+            {
+
+                return new ActionResult<GCSPack_SignUpResponse>(false, null, e.Message);
+            }
+        }
+
+
         #endregion
     }
 }
