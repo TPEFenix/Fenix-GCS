@@ -11,6 +11,7 @@ using MemoryPack;
 using System.Collections;
 using System.IO;
 using static System.Runtime.InteropServices.JavaScript.JSType;
+using System.Collections.Concurrent;
 
 
 namespace FenixGCSApi.Server
@@ -24,7 +25,8 @@ namespace FenixGCSApi.Server
         //Event
         public LoginProcess LoginProcess = null;
         public LogEvent OnLog { get; set; }
-
+        public GameRoomMemberModifyEvent GameRoomJoin;
+        public GameRoomMemberModifyEvent GameRoomLeave;
 
         public static readonly string SERVERSENDERID = (char)6 + "#ServerID" + (char)6;
         public Encoding Encoding = Encoding.UTF8;
@@ -34,6 +36,8 @@ namespace FenixGCSApi.Server
         private TcpListener _tcpListener;
         private UdpClient _udpClient;
         private CancellationTokenSource _udpListenCancelTokenSource;
+
+        public ConcurrentDictionary<string, GameRoom> GameRooms = new ConcurrentDictionary<string, GameRoom>();
 
         public ClientManager ClientManager { get; set; } = new ClientManager();
 
@@ -281,11 +285,53 @@ namespace FenixGCSApi.Server
 
             #endregion
 
+            if (!entity.Logged)//需要登入後才可以用的功能
+                return;
+
+
             #region 登入後請求
-
+            if (pack is GCSPack_CreateRoomRequest createRoomRequest)
+            {
+                if (GameRooms.ContainsKey(createRoomRequest.RoomID))
+                {
+                    //創建房間失敗
+                    GCSPack_CreateRoomResponse response = new GCSPack_CreateRoomResponse()
+                    {
+                        Success = false,
+                        ResponseTo = createRoomRequest.PackID,
+                        SenderID = SERVERSENDERID,
+                        ResponseMsg = "創建房間失敗，已經有此房間ID",
+                    };
+                    entity.SendPackToTarget(response);
+                }
+                else
+                {
+                    GameRoom room = new GameRoom()
+                    {
+                        HostUserID = entity.USER_ID,
+                        RoomID = createRoomRequest.RoomID,
+                        RoomInfo = createRoomRequest.RoomInfo,
+                    };
+                    room.OnJoin += (r, id) => { GameRoomJoin?.Invoke(r, id); };
+                    room.OnLeave += (r, id) =>
+                    {
+                        GameRoomLeave?.Invoke(r, id);
+                        if (r.MemberIDs.Count <= 0)
+                            GameRooms.Remove(r.RoomID, out GameRoom value);
+                    };
+                    GameRooms.TryAdd(createRoomRequest.RoomID, room);
+                    room.AddUser(entity.USER_ID);
+                    GCSPack_CreateRoomResponse response = new GCSPack_CreateRoomResponse()
+                    {
+                        Success = true,
+                        ResponseTo = createRoomRequest.PackID,
+                        SenderID = SERVERSENDERID,
+                        ResponseMsg = "創建房間成功",
+                    };
+                    entity.SendPackToTarget(response);
+                }
+            }
             #endregion
-
-
         }
 
         #region 預設註冊程式

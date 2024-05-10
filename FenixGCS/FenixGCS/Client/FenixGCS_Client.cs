@@ -174,12 +174,6 @@ namespace FenixGCSApi.Client
             return false;
         }
 
-        public bool DefaultSignUp(IPEndPoint signUpServicesIP, string userID, string userPwd)
-        {
-
-            return true;
-        }
-
         /// <summary>
         /// 直接傳送資料給Server(建議還是使用特定的指令函式)
         /// </summary>
@@ -364,7 +358,7 @@ namespace FenixGCSApi.Client
                 client.Client.Receive(recv);
                 var obj = (IGCSResponsePack)GCSPack.Deserialize<GCSPack>(recv);
 
-                ActionResult<GCSPack_SignUpResponse> rtn = new ActionResult<GCSPack_SignUpResponse>(true, obj as GCSPack_SignUpResponse);
+                ActionResult<GCSPack_SignUpResponse> rtn = new ActionResult<GCSPack_SignUpResponse>(obj.Success, obj as GCSPack_SignUpResponse);
                 client.Close();
                 return rtn;
             }
@@ -379,6 +373,29 @@ namespace FenixGCSApi.Client
                 return new ActionResult<GCSPack_SignUpResponse>(false, null, e.Message);
             }
         }
+        public ActionResult<GCSPack_CreateRoomResponse> CreateRoom(string roomID, string roomInfo, int timeout = Timeout.Infinite)
+        {
+            GCSPack_CreateRoomRequest data = new GCSPack_CreateRoomRequest()
+            {
+                RoomID = roomID,
+                RoomInfo = roomInfo
+            };
+            try
+            {
+                var obj = SendRequestPackToServer(data, ESendTunnelType.TCP, timeout);
+                ActionResult<GCSPack_CreateRoomResponse> rtn = new ActionResult<GCSPack_CreateRoomResponse>(true, obj as GCSPack_CreateRoomResponse);
+                return rtn;
+            }
+            catch (TimeoutException)
+            {
+                return new ActionResult<GCSPack_CreateRoomResponse>(false, null, "Timeout");
+            }
+            catch (Exception e)
+            {
+                return new ActionResult<GCSPack_CreateRoomResponse>(false, null, e.Message);
+            }
+        }
+
 
 
         #endregion

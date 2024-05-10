@@ -1,19 +1,34 @@
 ﻿using System;
 using System.Collections.Concurrent;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-
 namespace FenixGCSApi.Server
 {
+    public delegate void GameRoomMemberModifyEvent(GameRoom sender, string userID);
     public class GameRoom
     {
-        public string RoomID { get; set; }
-        public ConcurrentDictionary<string, ClientEntity> Clients { get; set; } = new ConcurrentDictionary<string, ClientEntity>();
-        public ConcurrentDictionary<string, int> ClientNumber { get; set; } = new ConcurrentDictionary<string, int>();
-        public ClientEntity Host { get; set; }
+        public GameRoomMemberModifyEvent OnJoin;
+        public GameRoomMemberModifyEvent OnLeave;
 
-        
+        public string RoomID { get; set; }
+        public string RoomInfo { get; set; }
+        public string HostUserID { get; set; }
+        public ConcurrentList<string> MemberIDs { get; set; }
+
+        public void AddUser(string userID)
+        {
+            if (!userID.Contains(userID))
+            {
+                MemberIDs.Add(userID);
+                OnJoin?.Invoke(this,userID);
+            }
+        }
+        public void RemoveUser(string userID)
+        {
+            if (userID.Contains(userID))
+            {
+                MemberIDs.Remove(userID);
+                OnLeave?.Invoke(this, userID);
+            }
+        }
+
     }
 }
