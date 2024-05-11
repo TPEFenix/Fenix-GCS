@@ -9,25 +9,38 @@ namespace FenixGCSApi.Server
         public GameRoomMemberModifyEvent OnLeave;
 
         public string RoomID { get; set; }
+        public int MaxMemberCount { get; set; }
         public string RoomInfo { get; set; }
         public string HostUserID { get; set; }
-        public ConcurrentList<string> MemberIDs { get; set; }
+        public ConcurrentList<string> MemberIDs { get; set; } = new ConcurrentList<string>();
 
-        public void AddUser(string userID)
+        public GameRoom(string roomID, int maxMemberCount, string hostUserID, string roomInfo = null)
         {
-            if (!userID.Contains(userID))
+            RoomID = roomID;
+            MaxMemberCount = maxMemberCount;
+            HostUserID = hostUserID;
+            RoomInfo = roomInfo;
+        }
+
+        public bool AddUser(string userID)
+        {
+            if (!userID.Contains(userID) && MemberIDs.Count < MaxMemberCount)
             {
                 MemberIDs.Add(userID);
-                OnJoin?.Invoke(this,userID);
+                OnJoin?.Invoke(this, userID);
+                return true;
             }
+            return false;
         }
-        public void RemoveUser(string userID)
+        public bool RemoveUser(string userID)
         {
             if (userID.Contains(userID))
             {
                 MemberIDs.Remove(userID);
                 OnLeave?.Invoke(this, userID);
+                return true;
             }
+            return false;
         }
 
     }

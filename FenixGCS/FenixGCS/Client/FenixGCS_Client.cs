@@ -252,7 +252,7 @@ namespace FenixGCSApi.Client
                             continue;
                         _udpByteFormatter.InsertSourceData(data);
                     }
-                    catch (Exception e) { Console.WriteLine("去你得"); }
+                    catch { }
                 }
             });
         }
@@ -339,7 +339,7 @@ namespace FenixGCSApi.Client
                 return new ActionResult<GCSPack_LoginResponse>(false, null, e.Message);
             }
         }
-        public ActionResult<GCSPack_SignUpResponse> SignUpUser(IPEndPoint serverSignUpServicesPoint, string userID, string userPwd, int timeout = Timeout.Infinite)
+        public ActionResult<GCSPack_BasicResponse> SignUpUser(IPEndPoint serverSignUpServicesPoint, string userID, string userPwd, int timeout = Timeout.Infinite)
         {
             GCSPack_SignUpRequest data = new GCSPack_SignUpRequest()
             {
@@ -347,8 +347,7 @@ namespace FenixGCSApi.Client
                 UserID = userID,
                 UserPwd = userPwd,
             };
-            TcpClient client = new TcpClient();
-            client = new TcpClient(IPPortFinder.FindAvailableTcpEndpoint());
+            TcpClient client = new TcpClient(IPPortFinder.FindAvailableTcpEndpoint());
             client.Connect(serverSignUpServicesPoint);
 
             try
@@ -358,41 +357,42 @@ namespace FenixGCSApi.Client
                 client.Client.Receive(recv);
                 var obj = (IGCSResponsePack)GCSPack.Deserialize<GCSPack>(recv);
 
-                ActionResult<GCSPack_SignUpResponse> rtn = new ActionResult<GCSPack_SignUpResponse>(obj.Success, obj as GCSPack_SignUpResponse);
+                ActionResult<GCSPack_BasicResponse> rtn = new ActionResult<GCSPack_BasicResponse>(obj.Success, obj as GCSPack_BasicResponse);
                 client.Close();
                 return rtn;
             }
             catch (TimeoutException)
             {
                 client.Close();
-                return new ActionResult<GCSPack_SignUpResponse>(false, null, "Timeout");
+                return new ActionResult<GCSPack_BasicResponse>(false, null, "Timeout");
             }
             catch (Exception e)
             {
 
-                return new ActionResult<GCSPack_SignUpResponse>(false, null, e.Message);
+                return new ActionResult<GCSPack_BasicResponse>(false, null, e.Message);
             }
         }
-        public ActionResult<GCSPack_CreateRoomResponse> CreateRoom(string roomID, string roomInfo, int timeout = Timeout.Infinite)
+        public ActionResult<GCSPack_BasicResponse> CreateRoom(string roomID, string roomInfo, int maxMemberCount, int timeout = Timeout.Infinite)
         {
             GCSPack_CreateRoomRequest data = new GCSPack_CreateRoomRequest()
             {
                 RoomID = roomID,
-                RoomInfo = roomInfo
+                RoomInfo = roomInfo,
+                MaxMemberCount = maxMemberCount,
             };
             try
             {
                 var obj = SendRequestPackToServer(data, ESendTunnelType.TCP, timeout);
-                ActionResult<GCSPack_CreateRoomResponse> rtn = new ActionResult<GCSPack_CreateRoomResponse>(true, obj as GCSPack_CreateRoomResponse);
+                ActionResult<GCSPack_BasicResponse> rtn = new ActionResult<GCSPack_BasicResponse>(true, obj as GCSPack_BasicResponse);
                 return rtn;
             }
             catch (TimeoutException)
             {
-                return new ActionResult<GCSPack_CreateRoomResponse>(false, null, "Timeout");
+                return new ActionResult<GCSPack_BasicResponse>(false, null, "Timeout");
             }
             catch (Exception e)
             {
-                return new ActionResult<GCSPack_CreateRoomResponse>(false, null, e.Message);
+                return new ActionResult<GCSPack_BasicResponse>(false, null, e.Message);
             }
         }
 

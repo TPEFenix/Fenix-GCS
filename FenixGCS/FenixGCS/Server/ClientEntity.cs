@@ -41,6 +41,11 @@ namespace FenixGCSApi.Server
         public IPEndPoint RemoteTCPEndPoint => ((IPEndPoint)_tcpClient.Client.RemoteEndPoint);
         public IPEndPoint RemoteUDPEndPoint;
 
+        /// <summary>
+        ///  這個ClientEntity所在的GameRoom
+        /// </summary>
+        public GameRoom InRoom { get; set; }
+
         public string USER_ID { get; set; }
         public string USER_NAME { get; set; }
 

@@ -21,11 +21,11 @@ namespace FenixGCSApi
 
     [MemoryPackUnion(0, typeof(BinaryDataGCSPack))]
     [MemoryPackUnion(1, typeof(StringDataGCSPack))]
+    [MemoryPackUnion(2, typeof(GCSPack_BasicResponse))]
     [MemoryPackable]
     public abstract partial class GCSPack : IGCSPack
     {
         //經過實測，用is去直接GetType判斷的速度遠比自己存一個Int去判斷Type還快
-
         public string SenderID { get; set; }
         public string PackID { get; set; } = GUIDGetter.Get();
         public virtual ESendTunnelType SendTunnelType { get; set; } = ESendTunnelType.UDP;
@@ -54,6 +54,18 @@ namespace FenixGCSApi
         {
             return Deserialize<GCSPack>(data);
         }
+
+        public static GCSPack_BasicResponse GenerateBasicResponse(bool success, string responseTo, string senderID, string responseMsg = null)
+        {
+            GCSPack_BasicResponse response = new GCSPack_BasicResponse()
+            {
+                Success = success,
+                ResponseTo = responseTo,
+                SenderID = senderID,
+                ResponseMsg = responseMsg,
+            };
+            return response;
+        }
     }
     [MemoryPackable]
     public partial class BinaryDataGCSPack : GCSPack
@@ -65,4 +77,14 @@ namespace FenixGCSApi
     {
         public string Data { get; set; }
     }
+
+    [MemoryPackable]
+    public partial class GCSPack_BasicResponse : GCSPack, IGCSResponsePack
+    {
+        public override ESendTunnelType SendTunnelType { get; set; } = ESendTunnelType.TCP;
+        public required bool Success { get; set; }
+        public required string ResponseTo { get; set; }
+        public string ResponseMsg { get; set; }
+    }
+
 }

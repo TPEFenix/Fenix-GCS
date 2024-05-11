@@ -10,52 +10,68 @@ using System.Net.Http;
 using MemoryPack;
 using System.Collections;
 using System.IO;
-using static System.Runtime.InteropServices.JavaScript.JSType;
 using System.Collections.Concurrent;
 
 
 namespace FenixGCSApi.Server
 {
-    public delegate ActionResult<bool> LoginProcess(string id, string pwd);
-
-    public delegate void TCPClientConnectedEvent(TcpClient client);
 
     public class FenixGCS_Server : ILogable
     {
-        //Event
-        public LoginProcess LoginProcess = null;
         public LogEvent OnLog { get; set; }
-        public GameRoomMemberModifyEvent GameRoomJoin;
-        public GameRoomMemberModifyEvent GameRoomLeave;
 
+        /// <summary>
+        /// 伺服器相關的外拋事件
+        /// </summary>
+        public readonly FenixGCS_ServerEvents Events = new FenixGCS_ServerEvents();
+
+        /// <summary>
+        /// 在整個伺服器環境中，代表由Server發出的PackSenderID
+        /// </summary>
         public static readonly string SERVERSENDERID = (char)6 + "#ServerID" + (char)6;
+
+        /// <summary>
+        /// Server所使用的編碼。
+        /// </summary>
         public Encoding Encoding = Encoding.UTF8;
-        public TCPClientConnectedEvent TCPClientConnected;
-        public CancellationToken ListenerCancellationToken { get; set; } = new CancellationToken();
-        public CancellationToken DefaultSignUpCancellationToken { get; set; } = new CancellationToken();
-        private TcpListener _tcpListener;
-        private UdpClient _udpClient;
-        private CancellationTokenSource _udpListenCancelTokenSource;
 
-        public ConcurrentDictionary<string, GameRoom> GameRooms = new ConcurrentDictionary<string, GameRoom>();
+        /// <summary>
+        /// 房間列表
+        /// </summary>
+        public ConcurrentDictionary<string, GameRoom> GameRooms { get; private set; } = new ConcurrentDictionary<string, GameRoom>();
 
-        public ClientManager ClientManager { get; set; } = new ClientManager();
+        /// <summary>
+        ///  ClientEntity管理物件
+        /// </summary>
+        public ClientManager ClientManager { get; private set; } = new ClientManager();
 
         public IPEndPoint TCPIPEndPoint { private set; get; }
-        public int TCP_Port => TCPIPEndPoint.Port;
         public IPEndPoint UDPIPEndPoint { private set; get; }
-        public int UDP_Port => UDPIPEndPoint.Port;
 
+        private TcpListener _tcpListener;
+        private UdpClient _udpClient;
+        private CancellationTokenSource _listenerCancellationToken = new CancellationTokenSource();
+        private CancellationTokenSource _defaultSignUpCancellationToken = new CancellationTokenSource();
+        private CancellationTokenSource _udpListenCancelTokenSource = new CancellationTokenSource();
 
+        /// <summary>
+        /// 啟動伺服器
+        /// </summary>
+        /// <param name="tcpIPEndPoint"></param>
+        /// <param name="udpIPEndPoint"></param>
         public void Start(IPEndPoint tcpIPEndPoint, IPEndPoint udpIPEndPoint)
         {
             TCPIPEndPoint = tcpIPEndPoint;
             UDPIPEndPoint = udpIPEndPoint;
+
             _udpClient = new UdpClient(UDPIPEndPoint);
             _tcpListener = new TcpListener(TCPIPEndPoint);
-            ListenerCancellationToken = new CancellationToken();
+
+            _listenerCancellationToken = new CancellationTokenSource();
+
             StartListenFromUDPThread();
-            Task.Run(() => { ProcessConnectListener(ListenerCancellationToken); }, ListenerCancellationToken);
+
+            Task.Run(() => { ProcessConnectListener(_listenerCancellationToken); });
         }
 
         /// <summary>
@@ -71,7 +87,7 @@ namespace FenixGCSApi.Server
             this.InfoLog("開啟預設註冊監聽");
             Task.Run(() =>
             {
-                while (!DefaultSignUpCancellationToken.IsCancellationRequested)
+                while (!_defaultSignUpCancellationToken.IsCancellationRequested)
                 {
                     try
                     {
@@ -85,16 +101,15 @@ namespace FenixGCSApi.Server
                             if (pack == null)
                                 return;
                             #region 註冊請求
-
                             if (pack is GCSPack_SignUpRequest registerRequest)
                             {
                                 ActionResult<bool> actionResult;
-                                actionResult = DefaultRegisterProcess(registerRequest.UserID, registerRequest.UserPwd);
+                                actionResult = DefaultSignUpProcess(registerRequest.UserID, registerRequest.UserPwd);
                                 if (actionResult != null)
                                 {
                                     if (actionResult.Success)
                                     {
-                                        GCSPack_SignUpResponse response = new GCSPack_SignUpResponse()
+                                        GCSPack_BasicResponse response = new GCSPack_BasicResponse()
                                         {
                                             Success = true,
                                             ResponseTo = registerRequest.PackID,
@@ -105,7 +120,7 @@ namespace FenixGCSApi.Server
                                     }
                                     else
                                     {
-                                        GCSPack_SignUpResponse response = new GCSPack_SignUpResponse()
+                                        GCSPack_BasicResponse response = new GCSPack_BasicResponse()
                                         {
                                             Success = false,
                                             ResponseTo = registerRequest.PackID,
@@ -117,7 +132,7 @@ namespace FenixGCSApi.Server
                                 }
                                 else
                                 {
-                                    GCSPack_SignUpResponse response = new GCSPack_SignUpResponse()
+                                    GCSPack_BasicResponse response = new GCSPack_BasicResponse()
                                     {
                                         Success = false,
                                         ResponseTo = registerRequest.PackID,
@@ -129,8 +144,6 @@ namespace FenixGCSApi.Server
                             }
 
                             #endregion
-
-
                         });
                     }
                     catch (Exception ex)
@@ -138,14 +151,18 @@ namespace FenixGCSApi.Server
                         this.ErrorLog("(DefaultSignup)TCP Listener exception: " + ex.Message);
                     }
                 }
-                if (DefaultSignUpCancellationToken.IsCancellationRequested)
+                if (_defaultSignUpCancellationToken.IsCancellationRequested)
                 {
 
                 }
             });
         }
 
-        private void ProcessConnectListener(CancellationToken token)
+        /// <summary>
+        /// 處理一般TCP連入監聽
+        /// </summary>
+        /// <param name="token"></param>
+        private void ProcessConnectListener(CancellationTokenSource token)
         {
             _tcpListener.Start();
             this.InfoLog("開啟監聽");
@@ -161,7 +178,7 @@ namespace FenixGCSApi.Server
                     entity.OnClientReceive += Entity_OnClientReceive;
                     entity.StartListen();
                     entity.SendPackToTarget(new GCSPack_LoginHint() { SenderID = SERVERSENDERID });
-                    TCPClientConnected?.Invoke(client);
+                    Events.TCPClientConnected?.Invoke(client);
                 }
                 catch (Exception ex)
                 {
@@ -174,7 +191,12 @@ namespace FenixGCSApi.Server
             }
         }
 
-        public bool IsCheckUDPPortRecv(byte[] recv)
+        /// <summary>
+        /// 檢查該UDP訊息是否為特殊指令:查詢UDPIP
+        /// </summary>
+        /// <param name="recv"></param>
+        /// <returns></returns>
+        private bool IsCheckUDPPortRecv(byte[] recv)
         {
             bool success = true;
             if (recv.Length == Constants.CheckUDPRemotePoint.Length)
@@ -195,6 +217,9 @@ namespace FenixGCSApi.Server
             return success;
         }
 
+        /// <summary>
+        /// 開啟UDP傳輸功能
+        /// </summary>
         private void StartListenFromUDPThread()
         {
             if (_udpListenCancelTokenSource != null)
@@ -230,6 +255,11 @@ namespace FenixGCSApi.Server
 
         }
 
+        /// <summary>
+        /// 當有Entity收到ByteArrayData時
+        /// </summary>
+        /// <param name="entity"></param>
+        /// <param name="data"></param>
         private void Entity_OnClientReceive(ClientEntity entity, byte[] data)
         {
             this.DebugLog("Entity_OnClientReceive");
@@ -241,102 +271,114 @@ namespace FenixGCSApi.Server
             #region 登入請求
             if (pack is GCSPack_LoginRequest loginRequest)
             {
-                if (entity.Logged || !ClientManager.IsEntityConnecting(entity))
-                    return;//不可重複登入或沒有先進行TCP連線
-
-                ActionResult<bool> actionResult;
-                if (LoginProcess != null)
-                    actionResult = LoginProcess.Invoke(loginRequest.UserID, loginRequest.UserPwd);
-                else
-                    actionResult = new ActionResult<bool>(true, true, "登入成功");
-
-                if (actionResult.Success)
-                {
-                    GCSPack_LoginResponse loginRtn = new GCSPack_LoginResponse()
-                    {
-                        Success = actionResult.Success,
-                        SenderID = SERVERSENDERID,
-                        ServerUDP_Port = UDP_Port,
-                        ResponseTo = loginRequest.PackID
-                    };
-                    entity.USER_ID = loginRequest.UserID;
-                    entity.RemoteUDPEndPoint = loginRequest.Client_UDP_Info;
-                    this.DebugLog($"RemoteUDPEndPoint = {loginRequest.Client_UDP_Info.ipEndPoint}");
-                    ClientManager.LoginUser(entity);
-                    entity.Logged = true;
-                    entity.SendBinaryToTarget(loginRtn.Serialize(), Client.ESendTunnelType.TCP);
-                }
-                else
-                {
-                    GCSPack_LoginResponse loginRtn = new GCSPack_LoginResponse()
-                    {
-                        Success = actionResult.Success,
-                        SenderID = SERVERSENDERID,
-                        ServerUDP_Port = -1,
-                        ResponseTo = loginRequest.PackID
-                    };
-                    entity.Logged = false;
-                    ClientManager.RemoveClientFromConnectingList(entity);
-                    entity.SendPackToTarget(loginRtn);
-                }
-
-                this.DebugLog("LoginProcessEnd");
+                LoginUser(entity, loginRequest);
+                return;
             }
-
             #endregion
 
             if (!entity.Logged)//需要登入後才可以用的功能
                 return;
 
-
-            #region 登入後請求
+            #region 創建房間請求
             if (pack is GCSPack_CreateRoomRequest createRoomRequest)
             {
-                if (GameRooms.ContainsKey(createRoomRequest.RoomID))
-                {
-                    //創建房間失敗
-                    GCSPack_CreateRoomResponse response = new GCSPack_CreateRoomResponse()
-                    {
-                        Success = false,
-                        ResponseTo = createRoomRequest.PackID,
-                        SenderID = SERVERSENDERID,
-                        ResponseMsg = "創建房間失敗，已經有此房間ID",
-                    };
-                    entity.SendPackToTarget(response);
-                }
-                else
-                {
-                    GameRoom room = new GameRoom()
-                    {
-                        HostUserID = entity.USER_ID,
-                        RoomID = createRoomRequest.RoomID,
-                        RoomInfo = createRoomRequest.RoomInfo,
-                    };
-                    room.OnJoin += (r, id) => { GameRoomJoin?.Invoke(r, id); };
-                    room.OnLeave += (r, id) =>
-                    {
-                        GameRoomLeave?.Invoke(r, id);
-                        if (r.MemberIDs.Count <= 0)
-                            GameRooms.Remove(r.RoomID, out GameRoom value);
-                    };
-                    GameRooms.TryAdd(createRoomRequest.RoomID, room);
-                    room.AddUser(entity.USER_ID);
-                    GCSPack_CreateRoomResponse response = new GCSPack_CreateRoomResponse()
-                    {
-                        Success = true,
-                        ResponseTo = createRoomRequest.PackID,
-                        SenderID = SERVERSENDERID,
-                        ResponseMsg = "創建房間成功",
-                    };
-                    entity.SendPackToTarget(response);
-                }
+                this.DebugLog($"創建房間:RoomID={createRoomRequest.RoomID}");
+                CreateRoom(entity, createRoomRequest);
+                return;
             }
             #endregion
         }
 
-        #region 預設註冊程式
+        /// <summary>
+        /// 對連線實體進行使用者登入
+        /// </summary>
+        /// <param name="entity"></param>
+        /// <param name="request"></param>
+        public void LoginUser(ClientEntity entity, GCSPack_LoginRequest request)
+        {
 
-        public ActionResult<bool> DefaultRegisterProcess(string id, string pwd)
+            if (entity.Logged || !ClientManager.IsEntityConnecting(entity))
+                return;//不可重複登入或沒有先進行TCP連線
+
+            ActionResult<bool> actionResult;
+            if (Events.LoginProcess != null)
+                actionResult = Events.LoginProcess.Invoke(request.UserID, request.UserPwd);
+            else
+                actionResult = new ActionResult<bool>(true, true, "登入成功");
+
+            if (actionResult.Success)
+            {
+                GCSPack_LoginResponse loginRtn = new GCSPack_LoginResponse()
+                {
+                    Success = actionResult.Success,
+                    SenderID = SERVERSENDERID,
+                    ServerUDP_Port = UDPIPEndPoint.Port,
+                    ResponseTo = request.PackID
+                };
+                entity.USER_ID = request.UserID;
+                entity.RemoteUDPEndPoint = request.Client_UDP_Info;
+                this.DebugLog($"RemoteUDPEndPoint = {request.Client_UDP_Info.ipEndPoint}");
+                ClientManager.LoginUser(entity);
+                entity.Logged = true;
+                entity.SendBinaryToTarget(loginRtn.Serialize(), Client.ESendTunnelType.TCP);
+            }
+            else
+            {
+                GCSPack_LoginResponse loginRtn = new GCSPack_LoginResponse()
+                {
+                    Success = actionResult.Success,
+                    SenderID = SERVERSENDERID,
+                    ServerUDP_Port = -1,
+                    ResponseTo = request.PackID
+                };
+                entity.Logged = false;
+                ClientManager.RemoveClientFromConnectingList(entity);
+                entity.SendPackToTarget(loginRtn);
+            }
+
+            this.DebugLog("LoginProcessEnd");
+
+        }
+
+        /// <summary>
+        /// 以連線實體為防主創建遊戲房間
+        /// </summary>
+        /// <param name="entity"></param>
+        /// <param name="request"></param>
+        public void CreateRoom(ClientEntity entity, GCSPack_CreateRoomRequest request)
+        {
+            if (GameRooms.ContainsKey(request.RoomID))
+            {
+                entity.SendPackToTarget(GCSPack.GenerateBasicResponse(false, request.PackID, SERVERSENDERID, "創建房間失敗，已經有此房間ID"));
+            }
+            else
+            {
+                GameRoom room = new GameRoom(request.RoomID, request.MaxMemberCount, entity.USER_ID, request.RoomInfo);
+                room.OnJoin += (r, id) =>
+                { Events.GameRoomJoin?.Invoke(r, id); };
+                room.OnLeave += (r, id) =>
+                {
+                    Events.GameRoomLeave?.Invoke(r, id);
+                    if (r.MemberIDs.Count <= 0)
+                        GameRooms.Remove(r.RoomID, out GameRoom value);
+                };
+
+                if (GameRooms.TryAdd(request.RoomID, room))
+                {
+                    room.AddUser(entity.USER_ID);
+                    entity.InRoom = room;
+                    entity.SendPackToTarget(GCSPack.GenerateBasicResponse(true, request.PackID, SERVERSENDERID, "創建房間成功"));
+                }
+            }
+        }
+
+        /// <summary>
+        /// 預設的註冊使用者程式
+        /// </summary>
+        /// <param name="id"></param>
+        /// <param name="pwd"></param>
+        /// <returns></returns>
+        private ActionResult<bool> DefaultSignUpProcess(string id, string pwd)
         {
             string usersDirectory = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Users");
 
@@ -367,8 +409,16 @@ namespace FenixGCSApi.Server
 
             return new ActionResult<bool>(true, true, "註冊成功"); // 如果用戶已存在，則返回 False
         }
-        #endregion
 
+        /// <summary>
+        /// 關閉伺服器
+        /// </summary>
+        public void Close()
+        {
+            _listenerCancellationToken.Cancel();
+            _defaultSignUpCancellationToken.Cancel();
+            _udpListenCancelTokenSource.Cancel();
+        }
     }
 
 
