@@ -15,7 +15,6 @@ using System.Collections.Concurrent;
 
 namespace FenixGCSApi.Server
 {
-
     public class FenixGCS_Server : ILogable
     {
         public LogEvent OnLog { get; set; }
@@ -23,7 +22,7 @@ namespace FenixGCSApi.Server
         /// <summary>
         /// 伺服器相關的外拋事件
         /// </summary>
-        public readonly FenixGCS_ServerEvents Events = new FenixGCS_ServerEvents();
+        public FenixGCS_ServerEvents Events { get; private set; } = new FenixGCS_ServerEvents();
 
         /// <summary>
         /// 在整個伺服器環境中，代表由Server發出的PackSenderID
@@ -178,7 +177,7 @@ namespace FenixGCSApi.Server
                     entity.OnClientReceive += Entity_OnClientReceive;
                     entity.StartListen();
                     entity.SendPackToTarget(new GCSPack_LoginHint() { SenderID = SERVERSENDERID });
-                    Events.TCPClientConnected?.Invoke(client);
+                    Events.OnTCPClientConnected?.Invoke(client);
                 }
                 catch (Exception ex)
                 {
@@ -271,7 +270,7 @@ namespace FenixGCSApi.Server
             #region 登入請求
             if (pack is GCSPack_LoginRequest loginRequest)
             {
-                LoginUser(entity, loginRequest);
+                ProcessLoginUserRequest(entity, loginRequest);
                 return;
             }
             #endregion
@@ -283,10 +282,22 @@ namespace FenixGCSApi.Server
             if (pack is GCSPack_CreateRoomRequest createRoomRequest)
             {
                 this.DebugLog($"創建房間:RoomID={createRoomRequest.RoomID}");
-                CreateRoom(entity, createRoomRequest);
+                ProcessCreateRoomRequest(entity, createRoomRequest);
                 return;
             }
             #endregion
+
+            #region 加入房間請求
+            if (pack is GCSPack_JoinRoomRequest joinRoomRequest)
+            {
+                this.DebugLog($"嘗試加入房間:RoomID={joinRoomRequest.RoomID}");
+                ProcessJoinRoomRequest(entity, joinRoomRequest);
+                return;
+            }
+            #endregion
+
+            //最後是預設以外的Pack將外拋給遊戲伺服器處理，而非內核
+            Events.OnCustomPackRecv?.Invoke(entity, pack);
         }
 
         /// <summary>
@@ -294,9 +305,8 @@ namespace FenixGCSApi.Server
         /// </summary>
         /// <param name="entity"></param>
         /// <param name="request"></param>
-        public void LoginUser(ClientEntity entity, GCSPack_LoginRequest request)
+        public void ProcessLoginUserRequest(ClientEntity entity, GCSPack_LoginRequest request)
         {
-
             if (entity.Logged || !ClientManager.IsEntityConnecting(entity))
                 return;//不可重複登入或沒有先進行TCP連線
 
@@ -304,13 +314,13 @@ namespace FenixGCSApi.Server
             if (Events.LoginProcess != null)
                 actionResult = Events.LoginProcess.Invoke(request.UserID, request.UserPwd);
             else
-                actionResult = new ActionResult<bool>(true, true, "登入成功");
+                actionResult = DefaultLoginProcess(request.UserID, request.UserPwd);
 
-            if (actionResult.Success)
+            if (actionResult.Result)
             {
                 GCSPack_LoginResponse loginRtn = new GCSPack_LoginResponse()
                 {
-                    Success = actionResult.Success,
+                    Success = actionResult.Result,
                     SenderID = SERVERSENDERID,
                     ServerUDP_Port = UDPIPEndPoint.Port,
                     ResponseTo = request.PackID
@@ -326,7 +336,7 @@ namespace FenixGCSApi.Server
             {
                 GCSPack_LoginResponse loginRtn = new GCSPack_LoginResponse()
                 {
-                    Success = actionResult.Success,
+                    Success = actionResult.Result,
                     SenderID = SERVERSENDERID,
                     ServerUDP_Port = -1,
                     ResponseTo = request.PackID
@@ -341,11 +351,11 @@ namespace FenixGCSApi.Server
         }
 
         /// <summary>
-        /// 以連線實體為防主創建遊戲房間
+        /// 以連線實體為房主創建遊戲房間
         /// </summary>
         /// <param name="entity"></param>
         /// <param name="request"></param>
-        public void CreateRoom(ClientEntity entity, GCSPack_CreateRoomRequest request)
+        public void ProcessCreateRoomRequest(ClientEntity entity, GCSPack_CreateRoomRequest request)
         {
             if (GameRooms.ContainsKey(request.RoomID))
             {
@@ -354,21 +364,50 @@ namespace FenixGCSApi.Server
             else
             {
                 GameRoom room = new GameRoom(request.RoomID, request.MaxMemberCount, entity.USER_ID, request.RoomInfo);
+
+                //當使用者加入房間時外拋事件
                 room.OnJoin += (r, id) =>
-                { Events.GameRoomJoin?.Invoke(r, id); };
+                { Events.OnGameRoomJoin?.Invoke(r, id); };
+
+                //當使用者離開房間時外拋事件，此外如果是最後一個玩家離開房間則銷毀房間
                 room.OnLeave += (r, id) =>
                 {
-                    Events.GameRoomLeave?.Invoke(r, id);
+                    Events.OnGameRoomLeave?.Invoke(r, id);
                     if (r.MemberIDs.Count <= 0)
                         GameRooms.Remove(r.RoomID, out GameRoom value);
                 };
 
+                //創建房間
                 if (GameRooms.TryAdd(request.RoomID, room))
                 {
                     room.AddUser(entity.USER_ID);
                     entity.InRoom = room;
                     entity.SendPackToTarget(GCSPack.GenerateBasicResponse(true, request.PackID, SERVERSENDERID, "創建房間成功"));
                 }
+            }
+        }
+
+        /// <summary>
+        ///  加入房間
+        /// </summary>
+        public void ProcessJoinRoomRequest(ClientEntity entity, GCSPack_JoinRoomRequest request)
+        {
+            if (GameRooms.ContainsKey(request.RoomID))
+            {
+                GameRoom room = GameRooms[request.RoomID];
+                if (room.AddUser(entity.USER_ID))
+                {
+                    entity.InRoom = room;
+                    entity.SendPackToTarget(GCSPack.GenerateBasicResponse(true, request.PackID, SERVERSENDERID, "加入房間成功"));
+                }
+                else
+                {
+                    entity.SendPackToTarget(GCSPack.GenerateBasicResponse(true, request.PackID, SERVERSENDERID, "加入房間失敗，人數已滿"));
+                }
+            }
+            else
+            {
+                entity.SendPackToTarget(GCSPack.GenerateBasicResponse(false, request.PackID, SERVERSENDERID, "加入房間失敗，沒有此房間ID"));
             }
         }
 
@@ -391,7 +430,7 @@ namespace FenixGCSApi.Server
 
             // 檢查用戶檔案是否存在
             if (File.Exists(userFilePath))
-                return new ActionResult<bool>(false, false, "用戶已經存在"); // 如果用戶已存在，則返回 False
+                return new ActionResult<bool>(true, false, "用戶已經存在"); // 如果用戶已存在，則返回 False
 
             // 創建用戶資料並序列化
             UserDataInfo userData = new UserDataInfo
@@ -408,6 +447,34 @@ namespace FenixGCSApi.Server
             }
 
             return new ActionResult<bool>(true, true, "註冊成功"); // 如果用戶已存在，則返回 False
+        }
+
+        public ActionResult<bool> DefaultLoginProcess(string id, string pwd)
+        {
+            string usersDirectory = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Users");
+            string userFilePath = Path.Combine(usersDirectory, id + ".dat");
+
+            // 檢查用戶檔案是否存在
+            if (!File.Exists(userFilePath))
+                return new ActionResult<bool>(true, false, "使用者帳密錯誤"); // 用戶檔案不存在，返回 False
+
+
+            // 讀取檔案到 byte array
+            byte[] fileContent;
+            using (var fileStream = new FileStream(userFilePath, FileMode.Open, FileAccess.Read))
+            {
+                fileContent = new byte[fileStream.Length];  // 創建一個長度等於檔案大小的 byte array
+                fileStream.Read(fileContent, 0, fileContent.Length);  // 讀取檔案到 byte array
+            }
+
+            // 使用 byte array 反序列化用戶資料
+            UserDataInfo userData = MemoryPackSerializer.Deserialize<UserDataInfo>(fileContent);
+
+            // 比對密碼
+            if (userData.Pwd == pwd)
+                return new ActionResult<bool>(true, true, "登入成功");
+            else
+                return new ActionResult<bool>(true, false, "使用者帳密錯誤");
         }
 
         /// <summary>

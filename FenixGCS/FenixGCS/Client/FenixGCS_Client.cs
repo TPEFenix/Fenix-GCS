@@ -395,9 +395,24 @@ namespace FenixGCSApi.Client
                 return new ActionResult<GCSPack_BasicResponse>(false, null, e.Message);
             }
         }
-
-
-
+        public ActionResult<GCSPack_BasicResponse> JoinRoom(string roomID, int timeout = Timeout.Infinite)
+        {
+            GCSPack_JoinRoomRequest data = new GCSPack_JoinRoomRequest() { RoomID = roomID, };
+            try
+            {
+                var obj = SendRequestPackToServer(data, ESendTunnelType.TCP, timeout);
+                ActionResult<GCSPack_BasicResponse> rtn = new ActionResult<GCSPack_BasicResponse>(true, obj as GCSPack_BasicResponse);
+                return rtn;
+            }
+            catch (TimeoutException)
+            {
+                return new ActionResult<GCSPack_BasicResponse>(false, null, "Timeout");
+            }
+            catch (Exception e)
+            {
+                return new ActionResult<GCSPack_BasicResponse>(false, null, e.Message);
+            }
+        }
         #endregion
     }
 }

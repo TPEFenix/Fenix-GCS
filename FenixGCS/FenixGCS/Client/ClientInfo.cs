@@ -12,5 +12,4 @@ namespace FenixGCSApi.Client
     {
         public string ID { get; set; }
     }
-
 }

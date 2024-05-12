@@ -9,12 +9,14 @@ namespace FenixGCSApi.Server
 {
     public delegate ActionResult<bool> LoginProcess(string id, string pwd);
     public delegate void TCPClientConnectedEvent(TcpClient client);
+    public delegate void CustomPackRecv(ClientEntity entity, GCSPack pack);
 
     public class FenixGCS_ServerEvents
     {
         public LoginProcess LoginProcess = null;
-        public GameRoomMemberModifyEvent GameRoomJoin;
-        public GameRoomMemberModifyEvent GameRoomLeave;
-        public TCPClientConnectedEvent TCPClientConnected;
+        public GameRoomMemberModifyEvent OnGameRoomJoin;
+        public GameRoomMemberModifyEvent OnGameRoomLeave;
+        public TCPClientConnectedEvent OnTCPClientConnected;
+        public CustomPackRecv OnCustomPackRecv;
     }
 }
