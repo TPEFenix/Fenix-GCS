@@ -11,6 +11,5 @@ namespace FenixGCSApi
     public class ClientConnectEntity
     {
         public EConnectType ConnectType { get; set; }
-
     }
 }

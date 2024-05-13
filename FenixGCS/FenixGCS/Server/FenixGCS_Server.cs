@@ -296,6 +296,15 @@ namespace FenixGCSApi.Server
             }
             #endregion
 
+            #region 退出房間請求
+            if (pack is GCSPack_LeaveRoomRequest leaveRoomRequest)
+            {
+                this.DebugLog($"User[{entity.USER_ID}]退出房間:RoomID={entity.InRoom.RoomID}");
+                ProcessLeaveRoomRequest(entity, leaveRoomRequest);
+                return;
+            }
+            #endregion
+
             //最後是預設以外的Pack將外拋給遊戲伺服器處理，而非內核
             Events.OnCustomPackRecv?.Invoke(entity, pack);
         }
@@ -408,6 +417,23 @@ namespace FenixGCSApi.Server
             else
             {
                 entity.SendPackToTarget(GCSPack.GenerateBasicResponse(false, request.PackID, SERVERSENDERID, "加入房間失敗，沒有此房間ID"));
+            }
+        }
+
+        /// <summary>
+        ///  退出房間
+        /// </summary>
+        public void ProcessLeaveRoomRequest(ClientEntity entity, GCSPack_LeaveRoomRequest request)
+        {
+            if (entity.InRoom != null && GameRooms.ContainsKey(entity.InRoom.RoomID))
+            {
+                GameRoom room = entity.InRoom;
+                room.RemoveUser(entity.USER_ID);
+                entity.SendPackToTarget(GCSPack.GenerateBasicResponse(true, request.PackID, SERVERSENDERID, "退出房間成功"));
+            }
+            else
+            {
+                entity.SendPackToTarget(GCSPack.GenerateBasicResponse(false, request.PackID, SERVERSENDERID, "退出房間失敗"));
             }
         }
 

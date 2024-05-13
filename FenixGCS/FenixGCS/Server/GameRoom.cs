@@ -38,9 +38,9 @@ namespace FenixGCSApi.Server
         public string RoomInfo { get; set; }
 
         /// <summary>
-        /// 創建房間的使用者ID
+        /// 房主
         /// </summary>
-        public string HostUserID { get; set; }
+        public string HostUserID => MemberIDs[0];
 
         /// <summary>
         ///  房間成員的使用者ID列表(0應為房主，順序不應隨便更動)
@@ -54,7 +54,6 @@ namespace FenixGCSApi.Server
         {
             RoomID = roomID;
             MaxMemberCount = maxMemberCount;
-            HostUserID = hostUserID;
             RoomInfo = roomInfo;
         }
 

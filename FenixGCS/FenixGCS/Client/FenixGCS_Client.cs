@@ -85,6 +85,7 @@ namespace FenixGCSApi.Client
         }
 
 
+        #region 登入
         /// <summary>
         /// 登入到遊戲伺服器
         /// </summary>
@@ -173,6 +174,31 @@ namespace FenixGCSApi.Client
 
             return false;
         }
+        private ActionResult<GCSPack_LoginResponse> ServerLogin(string userID, string userPwd, int timeout = Timeout.Infinite)
+        {
+            GCSPack_LoginRequest data = new GCSPack_LoginRequest()
+            {
+                Client_UDP_Info = MyRemoteUDPEndPoint,
+                SenderID = userID,
+                UserID = userID,
+                UserPwd = userPwd,
+            };
+            try
+            {
+                var obj = SendRequestPackToServer(data, ESendTunnelType.TCP, timeout);
+                ActionResult<GCSPack_LoginResponse> rtn = new ActionResult<GCSPack_LoginResponse>(true, obj as GCSPack_LoginResponse);
+                return rtn;
+            }
+            catch (TimeoutException)
+            {
+                return new ActionResult<GCSPack_LoginResponse>(false, null, "Timeout");
+            }
+            catch (Exception e)
+            {
+                return new ActionResult<GCSPack_LoginResponse>(false, null, e.Message);
+            }
+        }
+        #endregion
 
         /// <summary>
         /// 直接傳送資料給Server(建議還是使用特定的指令函式)
@@ -315,31 +341,32 @@ namespace FenixGCSApi.Client
         }
 
         #region 溝通
-        private ActionResult<GCSPack_LoginResponse> ServerLogin(string userID, string userPwd, int timeout = Timeout.Infinite)
+        /// <summary>
+        /// 送出RequestPack並等待回復
+        /// </summary>
+        /// <param name="pack"></param>
+        /// <param name="timeout"></param>
+        /// <returns></returns>
+        public ActionResult<IGCSResponsePack> SendRequest(IGCSRequestPack pack, int timeout = Timeout.Infinite)
         {
-            GCSPack_LoginRequest data = new GCSPack_LoginRequest()
-            {
-                Client_UDP_Info = MyRemoteUDPEndPoint,
-                SenderID = userID,
-                UserID = userID,
-                UserPwd = userPwd,
-            };
             try
             {
-                var obj = SendRequestPackToServer(data, ESendTunnelType.TCP, timeout);
-                ActionResult<GCSPack_LoginResponse> rtn = new ActionResult<GCSPack_LoginResponse>(true, obj as GCSPack_LoginResponse);
+                var obj = SendRequestPackToServer(pack, ESendTunnelType.TCP, timeout);
+                ActionResult<IGCSResponsePack> rtn = new ActionResult<IGCSResponsePack>(true, obj);
                 return rtn;
             }
             catch (TimeoutException)
             {
-                return new ActionResult<GCSPack_LoginResponse>(false, null, "Timeout");
+                return new ActionResult<IGCSResponsePack>(false, null, "Timeout");
             }
             catch (Exception e)
             {
-                return new ActionResult<GCSPack_LoginResponse>(false, null, e.Message);
+                return new ActionResult<IGCSResponsePack>(false, null, e.Message);
             }
         }
-        public ActionResult<GCSPack_BasicResponse> SignUpUser(IPEndPoint serverSignUpServicesPoint, string userID, string userPwd, int timeout = Timeout.Infinite)
+
+        [Obsolete("這個Function僅供測試，將開啟TCP預設使用者註冊方式，沒有任何防護措施，您應該建立自己的LoginProcess與註冊管道")]
+        public ActionResult<IGCSResponsePack> DefaultSignUpUser(IPEndPoint serverSignUpServicesPoint, string userID, string userPwd)
         {
             GCSPack_SignUpRequest data = new GCSPack_SignUpRequest()
             {
@@ -357,22 +384,23 @@ namespace FenixGCSApi.Client
                 client.Client.Receive(recv);
                 var obj = (IGCSResponsePack)GCSPack.Deserialize<GCSPack>(recv);
 
-                ActionResult<GCSPack_BasicResponse> rtn = new ActionResult<GCSPack_BasicResponse>(obj.Success, obj as GCSPack_BasicResponse);
+                ActionResult<IGCSResponsePack> rtn = new ActionResult<IGCSResponsePack>(obj.Success, obj);
                 client.Close();
                 return rtn;
             }
             catch (TimeoutException)
             {
                 client.Close();
-                return new ActionResult<GCSPack_BasicResponse>(false, null, "Timeout");
+                return new ActionResult<IGCSResponsePack>(false, null, "Timeout");
             }
             catch (Exception e)
             {
 
-                return new ActionResult<GCSPack_BasicResponse>(false, null, e.Message);
+                return new ActionResult<IGCSResponsePack>(false, null, e.Message);
             }
         }
-        public ActionResult<GCSPack_BasicResponse> CreateRoom(string roomID, string roomInfo, int maxMemberCount, int timeout = Timeout.Infinite)
+
+        public ActionResult<IGCSResponsePack> CreateRoom(string roomID, string roomInfo, int maxMemberCount, int timeout = Timeout.Infinite)
         {
             GCSPack_CreateRoomRequest data = new GCSPack_CreateRoomRequest()
             {
@@ -380,38 +408,16 @@ namespace FenixGCSApi.Client
                 RoomInfo = roomInfo,
                 MaxMemberCount = maxMemberCount,
             };
-            try
-            {
-                var obj = SendRequestPackToServer(data, ESendTunnelType.TCP, timeout);
-                ActionResult<GCSPack_BasicResponse> rtn = new ActionResult<GCSPack_BasicResponse>(true, obj as GCSPack_BasicResponse);
-                return rtn;
-            }
-            catch (TimeoutException)
-            {
-                return new ActionResult<GCSPack_BasicResponse>(false, null, "Timeout");
-            }
-            catch (Exception e)
-            {
-                return new ActionResult<GCSPack_BasicResponse>(false, null, e.Message);
-            }
+            return SendRequest(data, timeout);
         }
-        public ActionResult<GCSPack_BasicResponse> JoinRoom(string roomID, int timeout = Timeout.Infinite)
+        public ActionResult<IGCSResponsePack> JoinRoom(string roomID, int timeout = Timeout.Infinite)
         {
             GCSPack_JoinRoomRequest data = new GCSPack_JoinRoomRequest() { RoomID = roomID, };
-            try
-            {
-                var obj = SendRequestPackToServer(data, ESendTunnelType.TCP, timeout);
-                ActionResult<GCSPack_BasicResponse> rtn = new ActionResult<GCSPack_BasicResponse>(true, obj as GCSPack_BasicResponse);
-                return rtn;
-            }
-            catch (TimeoutException)
-            {
-                return new ActionResult<GCSPack_BasicResponse>(false, null, "Timeout");
-            }
-            catch (Exception e)
-            {
-                return new ActionResult<GCSPack_BasicResponse>(false, null, e.Message);
-            }
+            return SendRequest(data, timeout);
+        }
+        public ActionResult<IGCSResponsePack> LeaveRoom(int timeout = Timeout.Infinite)
+        {
+            return SendRequest(new GCSPack_LeaveRoomRequest(), timeout);
         }
         #endregion
     }
